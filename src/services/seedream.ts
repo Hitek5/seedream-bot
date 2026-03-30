@@ -38,6 +38,18 @@ export async function generateImage(
 }
 
 /**
+ * Upload a Telegram file URL to fal.ai storage (Telegram URLs are not publicly accessible).
+ */
+async function uploadToFal(telegramUrl: string): Promise<string> {
+  const response = await fetch(telegramUrl);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const blob = new Blob([buffer], { type: "image/jpeg" });
+  const file = new File([blob], "photo.jpg", { type: "image/jpeg" });
+  const falUrl = await fal.storage.upload(file);
+  return falUrl;
+}
+
+/**
  * Generate image with face/body swap using Seedream v4.5 edit.
  * Takes a prompt + user's face photo as reference.
  */
@@ -46,15 +58,16 @@ export async function generateWithFaceSwap(
   userPhotoUrl: string,
   options: GenerateOptions = {},
 ): Promise<GenerateResult> {
-  // Use Seedream v4.5 edit — pass user's photo as reference image
-  // The prompt describes the desired scene, the reference image provides the face/body
-  const editPrompt = `Using the person from the reference photo, ${prompt}. Keep the person's face and body features exactly as in the reference photo.`;
+  // Upload user's photo to fal.ai storage (Telegram URLs aren't public)
+  const falImageUrl = await uploadToFal(userPhotoUrl);
+
+  // Seedream v4.5 edit: image_urls is an array, prompt references "Figure 1"
+  const editPrompt = `Using the person's face and body from Figure 1 as reference, generate: ${prompt}. Keep the person's facial features exactly as in Figure 1.`;
 
   const result = await fal.subscribe(EDIT_ENDPOINT, {
     input: {
       prompt: editPrompt,
-      image_url: userPhotoUrl,
-      image_size: options.imageSize ?? config.defaultSize,
+      image_urls: [falImageUrl],
       num_images: 1,
       ...(options.seed != null && { seed: options.seed }),
     },
