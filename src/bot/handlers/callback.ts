@@ -1,5 +1,4 @@
-import { Bot, InputFile } from "grammy";
-import { generateImage } from "../../services/seedream.js";
+import { Bot } from "grammy";
 
 // Temporary in-memory stores until SQLite in Phase 3
 export const promptStore = new Map<string, string>();
@@ -40,28 +39,6 @@ export function registerCallbackHandler(bot: Bot): void {
       case "save_prompt": {
         console.log(`[save_prompt] id=${id} prompt="${prompt.slice(0, 80)}..."`);
         await ctx.answerCallbackQuery({ text: "💾 Сохранено в библиотеку" });
-        break;
-      }
-
-      case "generate": {
-        await ctx.answerCallbackQuery();
-        await ctx.replyWithChatAction("upload_photo");
-
-        const typingInterval = setInterval(() => {
-          ctx.replyWithChatAction("upload_photo").catch(() => {});
-        }, 4000);
-
-        try {
-          const result = await generateImage(prompt);
-          await ctx.replyWithPhoto(new InputFile({ url: result.url }), {
-            caption: `✨ Сгенерировано\n📐 ${result.width}×${result.height} · seed: ${result.seed}`,
-          });
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : "Неизвестная ошибка";
-          await ctx.reply(`Ошибка генерации: ${msg}`);
-        } finally {
-          clearInterval(typingInterval);
-        }
         break;
       }
 

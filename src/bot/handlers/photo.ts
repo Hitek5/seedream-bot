@@ -61,10 +61,9 @@ export function registerPhotoHandler(bot: Bot): void {
 
       const keyboard = new InlineKeyboard()
         .text("🧑 Создать с моим фото", `face_swap:${id}`)
-        .text("🎨 Сгенерировать как есть", `generate:${id}`)
         .row()
-        .text("💾 В библиотеку", `save_prompt:${id}`)
-        .text("✏️ Редактировать промпт", `edit_prompt:${id}`);
+        .text("✏️ Редактировать промпт", `edit_prompt:${id}`)
+        .text("💾 В библиотеку", `save_prompt:${id}`);
 
       const cost = "$0.04–0.08";
       const time = "~15–30 сек";
