@@ -1,7 +1,7 @@
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
 
-const client = new OpenAI({ apiKey: config.openaiKey });
+const client = new Anthropic({ apiKey: config.anthropicKey });
 
 const SYSTEM_PROMPT =
   "You are an expert prompt engineer for Seedream v4.5 image generation model. " +
@@ -10,23 +10,38 @@ const SYSTEM_PROMPT =
   "Be specific and vivid. Output ONLY the prompt, nothing else.";
 
 export async function analyzeImage(imageUrl: string): Promise<string> {
-  const response = await client.chat.completions.create({
-    model: "gpt-4o-mini",
+  // Download image and convert to base64 for Anthropic API
+  const response = await fetch(imageUrl);
+  const buffer = await response.arrayBuffer();
+  const base64 = Buffer.from(buffer).toString("base64");
+
+  // Detect media type from URL or default to jpeg
+  let mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp" = "image/jpeg";
+  if (imageUrl.includes(".png")) mediaType = "image/png";
+  else if (imageUrl.includes(".webp")) mediaType = "image/webp";
+  else if (imageUrl.includes(".gif")) mediaType = "image/gif";
+
+  const result = await client.messages.create({
+    model: "claude-sonnet-4-20250514",
     max_tokens: 1024,
+    system: SYSTEM_PROMPT,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
       {
         role: "user",
         content: [
-          { type: "image_url", image_url: { url: imageUrl } },
+          {
+            type: "image",
+            source: { type: "base64", media_type: mediaType, data: base64 },
+          },
+          { type: "text", text: "Analyze this image and create a detailed Seedream v4.5 prompt." },
         ],
       },
     ],
   });
 
-  const text = response.choices[0]?.message?.content?.trim();
-  if (!text) {
+  const text = result.content[0];
+  if (!text || text.type !== "text" || !text.text.trim()) {
     throw new Error("Vision API returned empty response");
   }
-  return text;
+  return text.text.trim();
 }
