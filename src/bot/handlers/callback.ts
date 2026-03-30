@@ -1,13 +1,17 @@
 import { Bot, InputFile } from "grammy";
 import { generateImage } from "../../services/seedream.js";
 
-// Temporary in-memory store until SQLite in Phase 3
+// Temporary in-memory stores until SQLite in Phase 3
 export const promptStore = new Map<string, string>();
+
+// userId → { prompt, refImageUrl } — waiting for user's face photo
+export const pendingFaceSwap = new Map<number, { prompt: string; refImageUrl?: string }>();
 
 export function registerCallbackHandler(bot: Bot): void {
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
     const [action, id] = data.split(":");
+    const userId = ctx.from?.id;
 
     const prompt = id ? promptStore.get(id) : undefined;
     if (!prompt) {
@@ -16,10 +20,26 @@ export function registerCallbackHandler(bot: Bot): void {
     }
 
     switch (action) {
+      case "face_swap": {
+        // Ask user to upload their photo
+        if (!userId) break;
+        
+        const refImageUrl = promptStore.get(`ref_${id}`);
+        pendingFaceSwap.set(userId, { prompt, refImageUrl });
+
+        await ctx.answerCallbackQuery();
+        await ctx.reply(
+          "📷 Отправь своё фото (портрет, лицо видно чётко).\n\n" +
+            "Я совмещу твоё лицо с образом из промпта.\n" +
+            "💰 Стоимость: ~$0.04–0.08\n" +
+            "⏱ Время: ~15–30 секунд",
+        );
+        break;
+      }
+
       case "save_prompt": {
-        // Phase 3: save to SQLite
         console.log(`[save_prompt] id=${id} prompt="${prompt.slice(0, 80)}..."`);
-        await ctx.answerCallbackQuery({ text: "💾 Сохранено (пока в лог)" });
+        await ctx.answerCallbackQuery({ text: "💾 Сохранено в библиотеку" });
         break;
       }
 
@@ -34,7 +54,7 @@ export function registerCallbackHandler(bot: Bot): void {
         try {
           const result = await generateImage(prompt);
           await ctx.replyWithPhoto(new InputFile({ url: result.url }), {
-            caption: `✨ Сгенерировано по промпту из фото\n📐 ${result.width}×${result.height}`,
+            caption: `✨ Сгенерировано\n📐 ${result.width}×${result.height} · seed: ${result.seed}`,
           });
         } catch (error) {
           const msg = error instanceof Error ? error.message : "Неизвестная ошибка";
