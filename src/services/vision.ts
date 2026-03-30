@@ -1,47 +1,56 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { fal } from "@fal-ai/client";
 import { config } from "../config.js";
 
-const client = new Anthropic({ apiKey: config.anthropicKey });
+fal.config({ credentials: config.falKey });
 
-const SYSTEM_PROMPT =
-  "You are an expert prompt engineer for Seedream v4.5 image generation model. " +
-  "Given a reference image, create a detailed text-to-image prompt in English that would recreate a similar image. " +
-  "Include: composition, lighting, camera angle, colors, mood, style, clothing details, pose, background, artistic style. " +
-  "Be specific and vivid. Output ONLY the prompt, nothing else.";
+const FLORENCE_ENDPOINT = "fal-ai/florence-2-large/more-detailed-caption" as const;
 
+/**
+ * Analyze an image and generate a Seedream v4.5 prompt.
+ * Uses Florence-2 (fal.ai) for detailed captioning, then enhances into a generation prompt.
+ */
 export async function analyzeImage(imageUrl: string): Promise<string> {
-  // Download image and convert to base64 for Anthropic API
-  const response = await fetch(imageUrl);
-  const buffer = await response.arrayBuffer();
-  const base64 = Buffer.from(buffer).toString("base64");
-
-  // Detect media type from URL or default to jpeg
-  let mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp" = "image/jpeg";
-  if (imageUrl.includes(".png")) mediaType = "image/png";
-  else if (imageUrl.includes(".webp")) mediaType = "image/webp";
-  else if (imageUrl.includes(".gif")) mediaType = "image/gif";
-
-  const result = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 1024,
-    system: SYSTEM_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: mediaType, data: base64 },
-          },
-          { type: "text", text: "Analyze this image and create a detailed Seedream v4.5 prompt." },
-        ],
-      },
-    ],
+  // Step 1: Get detailed caption from Florence-2
+  const result = await fal.subscribe(FLORENCE_ENDPOINT, {
+    input: { image_url: imageUrl },
   });
 
-  const text = result.content[0];
-  if (!text || text.type !== "text" || !text.text.trim()) {
-    throw new Error("Vision API returned empty response");
+  const data = result.data as { results: string };
+  const caption = typeof data.results === "string" ? data.results : String(data.results);
+
+  if (!caption) {
+    throw new Error("Florence-2 returned empty caption");
   }
-  return text.text.trim();
+
+  // Step 2: Enhance caption into a proper Seedream v4.5 prompt
+  const prompt = enhancePrompt(caption);
+  return prompt;
+}
+
+/**
+ * Enhance a basic image caption into a detailed Seedream v4.5 generation prompt.
+ */
+function enhancePrompt(caption: string): string {
+  // Clean up caption
+  let prompt = caption.trim();
+
+  // Add quality modifiers for Seedream v4.5
+  const qualityTags = [
+    "highly detailed",
+    "professional photography",
+    "cinematic lighting",
+    "8K resolution",
+    "sharp focus",
+  ];
+
+  // Don't add tags if they're already present
+  const tagsToAdd = qualityTags.filter(
+    (tag) => !prompt.toLowerCase().includes(tag.toLowerCase()),
+  );
+
+  if (tagsToAdd.length > 0) {
+    prompt += `, ${tagsToAdd.join(", ")}`;
+  }
+
+  return prompt;
 }
