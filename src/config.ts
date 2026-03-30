@@ -11,6 +11,7 @@ function required(name: string): string {
 export const config = {
   botToken: required("BOT_TOKEN"),
   falKey: required("FAL_KEY"),
+  openaiKey: required("OPENAI_API_KEY"),
   adminIds: (process.env.ADMIN_IDS ?? "")
     .split(",")
     .map((id) => parseInt(id.trim(), 10))

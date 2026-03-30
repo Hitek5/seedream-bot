@@ -1,87 +1,124 @@
-# 📋 План разработки Seedream Bot
+# 📋 План разработки Seedream Bot v2
 
-## Фаза 1: Скелет (MVP) — ~2 часа
-> Цель: бот отвечает на /imagine и отправляет сгенерённое фото
+## Концепция
 
-- [ ] Инициализация проекта (tsconfig, package.json, eslint)
-- [ ] grammY бот с /start и /imagine
-- [ ] fal.ai клиент (Seedream v4.5 text-to-image)
-- [ ] Отправка результата как фото в Telegram
-- [ ] Обработка ошибок (timeout, API fail, safety filter)
-- [ ] .env.example + config.ts
-- [ ] Запуск через `npm run dev` (tsx watch)
+Бот для создания фото «себя в любом образе»:
+1. Кидаешь **референс-картинку** → бот анализирует (GPT-4o-mini vision) → создаёт идеальный промпт
+2. Промпт + превью сохраняются в **общую библиотеку**
+3. Показывает карточку: превью + промпт + кнопка «Создать»
+4. Клик → «Стоимость: ~$0.08, время: ~20 сек. Загрузи своё фото»
+5. Загружаешь своё фото → **Seedream v4.5 edit** (face/body swap + стилизация) → готовое фото
 
-**Критерий готовности:** `/imagine красивый закат над океаном` → бот отправляет фото
-
-## Фаза 2: Полировка UX — ~2 часа
-
-- [ ] "Typing..." / "Uploading photo..." индикаторы
-- [ ] Inline-кнопки под фото: 🔄 Regenerate, 📐 Upscale, 🎨 Variations
-- [ ] Авто-перевод RU→EN промптов (через LLM или простой API)
-- [ ] Prompt enhancement — добавление quality-тегов (cinematic lighting, 8k, etc.)
-- [ ] /style command с пресетами (cinematic, anime, photorealistic, oil painting, watercolor)
-- [ ] Валидация промптов (длина, запрещённый контент)
-
-## Фаза 3: Persistence & Limits — ~1.5 часа
-
-- [ ] SQLite база (better-sqlite3): users, generations, settings
-- [ ] Настройки пользователя: размер, стиль по умолчанию, seed
-- [ ] /settings — inline-меню для настроек
-- [ ] Rate limiting (X генераций в день на пользователя)
-- [ ] /history — последние 10 генераций с кнопкой повтора
-- [ ] Статистика для админа: /stats (всего генераций, топ юзеры, расход $)
-
-## Фаза 4: Image Editing — ~1.5 часа
-
-- [ ] /edit — reply на фото + текстовая инструкция
-- [ ] fal.ai Seedream v4.5 edit endpoint
-- [ ] Multi-reference: несколько фото как input
-- [ ] Сохранение оригинала + результата
-
-## Фаза 5: Продвинутые фичи — ~2 часа
-
-- [ ] Inline-режим (генерация прямо из любого чата)
-- [ ] Очередь запросов (если >3 одновременных — в очередь)
-- [ ] Webhook-режим вместо polling (для продакшена)
-- [ ] Логирование (pino)
-- [ ] Health-check endpoint
-- [ ] PM2 ecosystem.config.js
-- [ ] systemd service
-
-## Фаза 6: Deploy & CI — ~1 час
-
-- [ ] Dockerfile (optional)
-- [ ] GitHub Actions: lint + typecheck on push
-- [ ] Deploy скрипт (git push → CI → SSH → pm2 restart)
-- [ ] Мониторинг: алерт если бот упал
+## Стоимость за генерацию
+| Шаг | Провайдер | Цена |
+|-----|-----------|------|
+| Vision-анализ | OpenAI GPT-4o-mini | ~$0.01 |
+| Image generation/edit | fal.ai Seedream v4.5 | $0.04 |
+| Face swap (optional) | fal.ai face-swap | $0.04 |
+| **Итого** | | **$0.05–0.09** |
 
 ---
 
+## Фаза 1: Скелет ✅ DONE
+- [x] grammY бот, /start, /imagine
+- [x] fal.ai Seedream v4.5 text-to-image
+- [x] Обработка ошибок
+
+## Фаза 2: Vision + Prompt Engineering ✅ DONE
+> Цель: кидаешь картинку → получаешь идеальный промпт
+
+- [x] OpenAI клиент (GPT-4o-mini vision)
+- [x] Хэндлер photo-сообщений: скачать фото → отправить в vision → получить промпт
+- [x] Prompt template для vision: «Опиши эту картинку как детальный промпт для генерации подобного изображения. Стиль, освещение, композиция, детали одежды, поза, фон, настроение.»
+- [x] Показать результат: превью + промпт + кнопки [💾 Сохранить] [✏️ Редактировать] [🎨 Создать]
+
+## Фаза 3: Библиотека промптов
+> Цель: общая коллекция стилей/образов для повторного использования
+
+- [ ] SQLite schema: prompts (id, prompt, thumbnail_url, category, created_by, created_at, uses_count)
+- [ ] /library — inline-кнопки с превью карточками (пагинация)
+- [ ] Категории: portrait, fashion, fantasy, cinematic, art
+- [ ] Поиск: /search <запрос>
+- [ ] Кнопка «Создать» на каждой карточке → переход к Фазе 4
+
+## Фаза 4: Face/Body Swap + Generation
+> Цель: загрузи фото → получи себя в образе из библиотеки
+
+- [ ] Стейт-машина (grammY conversations):
+  1. Пользователь нажимает «Создать» на карточке
+  2. Бот: «Стоимость: ~$0.08, время: ~20 сек. Загрузи своё фото (портрет, лицо видно чётко)»
+  3. Пользователь загружает фото
+  4. Бот: генерация... (typing indicator)
+  5. Результат: финальное фото + кнопки [🔄 Ещё раз] [📐 Другой размер] [💾 HD]
+- [ ] Pipeline:
+  1. Seedream v4.5 edit: базовая картинка + промпт + пользовательское фото как reference
+  2. Если нужно face-swap: fal.ai face-swap endpoint поверх результата
+- [ ] Сохранение результата в историю пользователя
+
+## Фаза 5: UX Polish
+- [ ] Inline-режим: @SeedreamGen_bot + текст → показ карточек из библиотеки
+- [ ] Rate limiting (20 генераций/день бесплатно)
+- [ ] /settings — качество, размер по умолчанию
+- [ ] /history — мои генерации
+- [ ] /stats (admin) — расход, юзеры, популярные промпты
+- [ ] Авто-перевод RU→EN промптов
+
+## Фаза 6: Deploy
+- [ ] PM2 ecosystem.config.js
+- [ ] GitHub Actions CI (lint + typecheck)
+- [ ] Health-check
+- [ ] Мониторинг (алерт если бот упал)
+
+---
+
+## Архитектура
+
+```
+src/
+├── bot/
+│   ├── index.ts              # grammY init + middleware
+│   ├── commands/
+│   │   ├── start.ts          # /start
+│   │   ├── imagine.ts        # /imagine (text-to-image)
+│   │   ├── library.ts        # /library (browse)
+│   │   ├── search.ts         # /search
+│   │   ├── settings.ts       # /settings
+│   │   └── history.ts        # /history
+│   ├── handlers/
+│   │   ├── photo.ts          # Photo → vision → prompt
+│   │   └── callback.ts       # Inline-кнопки
+│   ├── conversations/
+│   │   └── generate.ts       # Стейт-машина: выбор→фото→генерация→результат
+│   ├── middleware/
+│   │   ├── rateLimit.ts
+│   │   └── auth.ts
+│   └── keyboards/
+│       └── index.ts
+├── services/
+│   ├── seedream.ts           # fal.ai text-to-image + edit
+│   ├── faceswap.ts           # fal.ai face-swap
+│   ├── vision.ts             # GPT-4o-mini vision → prompt
+│   └── translate.ts          # RU→EN
+├── db/
+│   ├── schema.ts
+│   └── queries.ts
+├── config.ts
+└── index.ts
+```
+
 ## Технические решения
 
-### Почему fal.ai а не Replicate?
-- Одинаковая цена ($0.04/img)
-- fal.ai: нативный JS SDK, queue API, webhook поддержка
-- Быстрее cold start
+### Vision → Prompt: GPT-4o-mini
+- Дёшево ($0.01/запрос), быстро (~2 сек)
+- Промпт-шаблон заточен под Seedream v4.5 синтаксис
+- Результат: детальное описание на EN для максимального качества генерации
 
-### Почему grammY а не node-telegram-bot-api?
-- TypeScript-first, лучшие типы
-- Встроенный rate-limiter middleware
-- Session management из коробки
-- Активная разработка, modern API
+### Face/Body Swap: двухэтапный pipeline
+1. **Seedream v4.5 edit** — стилизация с reference image
+2. **fal.ai face-swap** (если нужна точная замена лица) — поверх результата
+- Fallback: если face-swap недоступен, только Seedream edit
 
-### Почему SQLite?
-- Zero-config, один файл
-- Для одного бота идеально
-- Легко бэкапить (просто скопировать файл)
-- При необходимости мигрируем на PostgreSQL
-
-### Prompt Engineering
-Пользовательский промпт автоматически обогащается:
-1. Перевод RU→EN (если кириллица)
-2. Добавление quality modifiers по стилю
-3. Negative prompt для улучшения качества
-
-Пример:
-- Ввод: `котик на крыше`
-- После обработки: `A photorealistic image of a cute cat sitting on a rooftop, golden hour lighting, cinematic composition, 8K resolution, highly detailed fur texture`
+### Библиотека: общая
+- Любой юзер может добавить промпт
+- uses_count для сортировки по популярности
+- Модерация: admin может удалять

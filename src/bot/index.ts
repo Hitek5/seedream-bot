@@ -1,6 +1,8 @@
 import { Bot, GrammyError, HttpError, InputFile } from "grammy";
 import { config } from "../config.js";
 import { generateImage } from "../services/seedream.js";
+import { registerPhotoHandler } from "./handlers/photo.js";
+import { registerCallbackHandler } from "./handlers/callback.js";
 
 export function createBot(): Bot {
   const bot = new Bot(config.botToken);
@@ -42,6 +44,10 @@ export function createBot(): Bot {
       clearInterval(typingInterval);
     }
   });
+
+  // Phase 2: photo analysis + callback buttons
+  registerPhotoHandler(bot);
+  registerCallbackHandler(bot);
 
   bot.catch((err) => {
     const ctx = err.ctx;
