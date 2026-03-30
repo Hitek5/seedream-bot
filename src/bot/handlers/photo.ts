@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, InputFile } from "grammy";
 import { analyzeImage } from "../../services/vision.js";
 import { promptStore, pendingFaceSwap } from "./callback.js";
 
@@ -27,8 +27,27 @@ export function registerPhotoHandler(bot: Bot): void {
         const { generateWithFaceSwap } = await import("../../services/seedream.js");
         const result = await generateWithFaceSwap(pending.prompt, userPhotoUrl);
 
-        await ctx.replyWithPhoto(new (await import("grammy")).InputFile({ url: result.url }), {
-          caption: `✨ Готово! Твоё фото + промпт\n📐 ${result.width}×${result.height} · seed: ${result.seed}`,
+        // Store result for re-generation / variations
+        const resultId = Date.now().toString(36);
+        promptStore.set(resultId, pending.prompt);
+        promptStore.set(`seed_${resultId}`, String(result.seed));
+
+        const w = result.width ?? "?";
+        const h = result.height ?? "?";
+        const seed = result.seed ?? "random";
+
+        const resultKeyboard = new InlineKeyboard()
+          .text("🔄 Ещё вариант", `regenerate:${resultId}`)
+          .text("🔍 Увеличить", `upscale:${resultId}`)
+          .row()
+          .text("✏️ Изменить промпт", `edit_prompt:${resultId}`)
+          .text("🧑 Другое фото", `face_swap:${resultId}`)
+          .row()
+          .text("💾 Сохранить", `save_prompt:${resultId}`);
+
+        await ctx.replyWithPhoto(new InputFile({ url: result.url }), {
+          caption: `✨ Готово! Твоё фото + промпт\n📐 ${w}×${h} · seed: ${seed}`,
+          reply_markup: resultKeyboard,
         });
       } catch (error) {
         const msg = error instanceof Error ? error.message : "Неизвестная ошибка";

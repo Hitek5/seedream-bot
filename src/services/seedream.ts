@@ -77,20 +77,24 @@ export async function generateWithFaceSwap(
 }
 
 function parseImageResult(data: unknown): GenerateResult {
-  const d = data as {
-    images: Array<{ url: string; width: number; height: number }>;
-    seed: number;
-  };
+  const d = data as Record<string, unknown>;
 
-  const image = d.images[0];
+  // fal.ai может вернуть images[] или output.images[] — пробуем оба
+  let images = d.images as Array<{ url: string; width?: number; height?: number }> | undefined;
+  if (!images && d.output) {
+    images = (d.output as Record<string, unknown>).images as typeof images;
+  }
+
+  const image = images?.[0];
   if (!image) {
+    console.error("[parseImageResult] unexpected response shape:", JSON.stringify(d).slice(0, 500));
     throw new Error("No image returned from Seedream API");
   }
 
   return {
     url: image.url,
-    seed: d.seed,
-    width: image.width,
-    height: image.height,
+    seed: (d.seed as number) ?? 0,
+    width: image.width ?? 0,
+    height: image.height ?? 0,
   };
 }
