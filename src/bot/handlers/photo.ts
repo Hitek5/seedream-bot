@@ -1,6 +1,6 @@
 import { Bot, InlineKeyboard, InputFile } from "grammy";
-import { analyzeImage } from "../../services/vision.js";
-import { promptStore, pendingFaceSwap } from "./callback.js";
+import { analyzeImage, extractHairColor } from "../../services/vision.js";
+import { promptStore, pendingFaceSwap, buildParamKeyboard, buildParamText } from "./callback.js";
 
 export function registerPhotoHandler(bot: Bot): void {
   bot.on("message:photo", async (ctx) => {
@@ -9,52 +9,32 @@ export function registerPhotoHandler(bot: Bot): void {
 
     // Check if user is uploading their face photo for a pending generation
     const pending = pendingFaceSwap.get(userId);
-    if (pending) {
-      pendingFaceSwap.delete(userId);
-      
-      await ctx.replyWithChatAction("upload_photo");
-      const typingInterval = setInterval(() => {
-        ctx.replyWithChatAction("upload_photo").catch(() => {});
-      }, 4000);
+    if (pending && !pending.userPhotoUrl) {
+      // Get user's photo URL
+      const photo = ctx.message.photo[ctx.message.photo.length - 1];
+      const file = await ctx.api.getFile(photo.file_id);
+      const userPhotoUrl = `https://api.telegram.org/file/bot${ctx.api.token}/${file.file_path}`;
 
+      await ctx.replyWithChatAction("typing");
+
+      // Analyze hair color from photo
+      let hairColor: string | null = null;
       try {
-        // Get user's photo URL
-        const photo = ctx.message.photo[ctx.message.photo.length - 1];
-        const file = await ctx.api.getFile(photo.file_id);
-        const userPhotoUrl = `https://api.telegram.org/file/bot${ctx.api.token}/${file.file_path}`;
-
-        // Import dynamically to avoid circular deps
-        const { generateWithFaceSwap } = await import("../../services/seedream.js");
-        const result = await generateWithFaceSwap(pending.prompt, userPhotoUrl);
-
-        // Store result for re-generation / variations
-        const resultId = Date.now().toString(36);
-        promptStore.set(resultId, pending.prompt);
-        promptStore.set(`seed_${resultId}`, String(result.seed));
-
-        const w = result.width ?? "?";
-        const h = result.height ?? "?";
-        const seed = result.seed ?? "random";
-
-        const resultKeyboard = new InlineKeyboard()
-          .text("🔄 Ещё вариант", `regenerate:${resultId}`)
-          .text("🔍 Увеличить", `upscale:${resultId}`)
-          .row()
-          .text("✏️ Изменить промпт", `edit_prompt:${resultId}`)
-          .text("🧑 Другое фото", `face_swap:${resultId}`)
-          .row()
-          .text("💾 Сохранить", `save_prompt:${resultId}`);
-
-        await ctx.replyWithPhoto(new InputFile({ url: result.url }), {
-          caption: `✨ Готово! Твоё фото + промпт\n📐 ${w}×${h} · seed: ${seed}`,
-          reply_markup: resultKeyboard,
-        });
+        hairColor = await extractHairColor(userPhotoUrl);
       } catch (error) {
-        const msg = error instanceof Error ? error.message : "Неизвестная ошибка";
-        await ctx.reply(`Ошибка генерации: ${msg}`);
-      } finally {
-        clearInterval(typingInterval);
+        console.error("[extractHairColor] error:", error);
       }
+
+      // Update pending state
+      pending.userPhotoUrl = userPhotoUrl;
+      pending.hairColor = hairColor;
+      pendingFaceSwap.set(userId, pending);
+
+      // Show parameter selection keyboard
+      const keyboard = buildParamKeyboard(pending);
+      const text = buildParamText(pending);
+
+      await ctx.reply(text, { reply_markup: keyboard });
       return;
     }
 
@@ -82,7 +62,9 @@ export function registerPhotoHandler(bot: Bot): void {
         .text("🧑 Создать с моим фото", `face_swap:${id}`)
         .row()
         .text("✏️ Редактировать промпт", `edit_prompt:${id}`)
-        .text("💾 В библиотеку", `save_prompt:${id}`);
+        .text("💾 В библиотеку", `save_prompt:${id}`)
+        .row()
+        .text("🏠 Сначала", `restart:0`);
 
       const cost = "$0.04–0.08";
       const time = "~15–30 сек";

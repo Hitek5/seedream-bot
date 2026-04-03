@@ -49,20 +49,60 @@ async function uploadToFal(telegramUrl: string): Promise<string> {
   return falUrl;
 }
 
+export interface FaceSwapParams {
+  height?: string;
+  bodyType?: string;
+  hairColor?: string | null;
+  hairstyle?: string;
+}
+
 /**
  * Generate image with face/body swap using Seedream v4.5 edit.
- * Takes a prompt + user's face photo as reference.
+ * Takes a prompt + user's face photo as reference + optional body params.
  */
 export async function generateWithFaceSwap(
   prompt: string,
   userPhotoUrl: string,
   options: GenerateOptions = {},
+  faceSwapParams: FaceSwapParams = {},
 ): Promise<GenerateResult> {
   // Upload user's photo to fal.ai storage (Telegram URLs aren't public)
   const falImageUrl = await uploadToFal(userPhotoUrl);
 
+  // Build body description from params
+  const bodyParts: string[] = [];
+
+  if (faceSwapParams.hairColor) {
+    bodyParts.push(faceSwapParams.hairColor);
+  }
+
+  const heightMap: Record<string, string> = {
+    tall: "tall, long legs, elongated elegant proportions, fashion model height",
+    medium: "average height, natural proportions",
+    petite: "petite, compact build, shorter stature",
+  };
+
+  const bodyTypeMap: Record<string, string> = {
+    slim: "slim, slender body, lean figure",
+    athletic: "athletic build, toned body, fit physique",
+    curvy: "curvy figure, voluptuous, full-figured",
+    average: "average build, natural body proportions",
+  };
+
+  if (faceSwapParams.height && heightMap[faceSwapParams.height]) {
+    bodyParts.push(heightMap[faceSwapParams.height]);
+  }
+  if (faceSwapParams.bodyType && bodyTypeMap[faceSwapParams.bodyType]) {
+    bodyParts.push(bodyTypeMap[faceSwapParams.bodyType]);
+  }
+  if (faceSwapParams.hairstyle) {
+    bodyParts.push(faceSwapParams.hairstyle);
+  }
+
+  const bodyDesc = bodyParts.length > 0 ? `, ${bodyParts.join(", ")}` : "";
+
   // Seedream v4.5 edit: image_urls is an array, prompt references "Figure 1"
-  const editPrompt = `Using the person's face and body from Figure 1 as reference, generate: ${prompt}. Keep the person's facial features exactly as in Figure 1.`;
+  const editPrompt = `Using the person's face and body from Figure 1 as reference, generate: ${prompt}${bodyDesc}. Keep the person's facial features exactly as in Figure 1.`;
 
   const result = await fal.subscribe(EDIT_ENDPOINT, {
     input: {
