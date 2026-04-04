@@ -4,6 +4,7 @@ import { generateImage } from "../services/seedream.js";
 import { promptStore } from "./handlers/callback.js";
 import { registerPhotoHandler } from "./handlers/photo.js";
 import { registerCallbackHandler } from "./handlers/callback.js";
+import { getBalance, deductBalance, formatBalance, formatCost, getBalanceRub, COSTS } from "../services/balance.js";
 
 // Persistent reply keyboard — always visible
 const mainKeyboard = new Keyboard()
@@ -44,6 +45,20 @@ export function createBot(): Bot {
 
   // Keep /imagine for backward compat
   bot.command("imagine", (ctx) => handleGenerate(ctx, ctx.match?.trim()));
+
+  // Balance check
+  bot.command("balance", (ctx) => {
+    const uid = ctx.from?.id;
+    if (!uid) return ctx.reply("Не могу определить пользователя.");
+    return ctx.reply(
+      `💰 Баланс: ${formatBalance(uid)}\n\n` +
+      `Стоимость:\n` +
+      `• Генерация: ${formatCost(COSTS.textToImage)}\n` +
+      `• Face swap: ${formatCost(COSTS.faceSwap)}\n\n` +
+      `Для пополнения: @Amoskv`,
+      { reply_markup: mainKeyboard },
+    );
+  });
 
   // Phase 2: photo analysis + inline callback buttons
   registerPhotoHandler(bot);
@@ -96,6 +111,23 @@ async function handleGenerate(ctx: any, prompt: string | undefined) {
     return ctx.reply("Напиши что хочешь увидеть 🎨", { reply_markup: mainKeyboard });
   }
 
+  const userId = ctx.from?.id;
+  const cost = COSTS.textToImage;
+
+  // Check balance
+  if (userId) {
+    const balance = getBalance(userId);
+    if (balance < cost) {
+      return ctx.reply(
+        `❌ Недостаточно средств.\n\n` +
+        `💰 Баланс: ${formatBalance(userId)}\n` +
+        `💵 Стоимость: ${formatCost(cost)}\n\n` +
+        `Обратись к @Amoskv для пополнения.`,
+        { reply_markup: mainKeyboard },
+      );
+    }
+  }
+
   await ctx.replyWithChatAction("upload_photo");
 
   const typingInterval = setInterval(() => {
@@ -104,6 +136,11 @@ async function handleGenerate(ctx: any, prompt: string | undefined) {
 
   try {
     const result = await generateImage(prompt);
+
+    // Deduct balance
+    if (userId) {
+      deductBalance(userId, cost);
+    }
 
     // Store prompt for inline buttons
     const id = Date.now().toString(36);
@@ -120,15 +157,19 @@ async function handleGenerate(ctx: any, prompt: string | undefined) {
       .text("🏠 Сначала", `restart:0`);
 
     // Telegram caption limit: 1024 chars. Truncate long prompts.
-    const maxPromptLen = 800;
+    const maxPromptLen = 700;
     const displayPrompt = prompt.length > maxPromptLen
       ? prompt.slice(0, maxPromptLen) + "…"
       : prompt;
 
+    const balanceAfterRub = userId ? formatBalance(userId) : "0 ₽";
+    const sizeStr = formatSize(result.width, result.height);
+
     await ctx.replyWithPhoto(new InputFile({ url: result.url }), {
       caption:
         `✨ *${escapeMarkdown(displayPrompt)}*\n` +
-        `📐 ${result.width}×${result.height} · seed: \`${result.seed}\``,
+        `📐 ${escapeMarkdown(sizeStr)} · seed: \`${result.seed}\`\n` +
+        `💵 ${escapeMarkdown(formatCost(cost))} · 💰 ${escapeMarkdown(balanceAfterRub)}`,
       parse_mode: "MarkdownV2",
       reply_markup: kb,
     });
@@ -138,6 +179,13 @@ async function handleGenerate(ctx: any, prompt: string | undefined) {
   } finally {
     clearInterval(typingInterval);
   }
+}
+
+function formatSize(w: number, h: number): string {
+  if (!w || !h) return "auto";
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  const d = gcd(w, h);
+  return `${w}×${h} (${w / d}:${h / d})`;
 }
 
 function escapeMarkdown(text: string): string {

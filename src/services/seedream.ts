@@ -119,8 +119,11 @@ export async function generateWithFaceSwap(
 function parseImageResult(data: unknown): GenerateResult {
   const d = data as Record<string, unknown>;
 
+  // Log response shape for debugging (first 500 chars)
+  console.log("[parseImageResult] keys:", Object.keys(d), "images?", Array.isArray(d.images));
+
   // fal.ai может вернуть images[] или output.images[] — пробуем оба
-  let images = d.images as Array<{ url: string; width?: number; height?: number }> | undefined;
+  let images = d.images as Array<{ url: string; width?: number; height?: number; content_type?: string }> | undefined;
   if (!images && d.output) {
     images = (d.output as Record<string, unknown>).images as typeof images;
   }
@@ -131,10 +134,23 @@ function parseImageResult(data: unknown): GenerateResult {
     throw new Error("No image returned from Seedream API");
   }
 
+  let w = image.width ?? 0;
+  let h = image.height ?? 0;
+
+  // fal.ai often returns 0×0 for auto sizes — try to extract from URL
+  // URL pattern: .../{width}x{height}/... or query params
+  if ((!w || !h) && image.url) {
+    const sizeMatch = image.url.match(/\/(\d{3,4})x(\d{3,4})\//);
+    if (sizeMatch) {
+      w = parseInt(sizeMatch[1], 10);
+      h = parseInt(sizeMatch[2], 10);
+    }
+  }
+
   return {
     url: image.url,
     seed: (d.seed as number) ?? 0,
-    width: image.width ?? 0,
-    height: image.height ?? 0,
+    width: w,
+    height: h,
   };
 }

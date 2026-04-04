@@ -1,4 +1,12 @@
 import { Bot, InlineKeyboard, InputFile } from "grammy";
+import { getBalance, deductBalance, formatBalance, formatCost, getBalanceRub, COSTS } from "../../services/balance.js";
+
+function formatSize(w: number, h: number): string {
+  if (!w || !h) return "auto";
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  const d = gcd(w, h);
+  return `${w}×${h} (${w / d}:${h / d})`;
+}
 
 // Temporary in-memory stores until SQLite in Phase 3
 export const promptStore = new Map<string, string>();
@@ -138,6 +146,14 @@ export function registerCallbackHandler(bot: Bot): void {
 
       // Both selected → generate
       if (state.height && state.bodyType) {
+        const fsCost = COSTS.faceSwap;
+        if (userId) {
+          const bal = getBalance(userId);
+          if (bal < fsCost) {
+            await ctx.answerCallbackQuery({ text: `❌ Недостаточно средств (${formatBalance(userId)})` });
+            return;
+          }
+        }
         await ctx.answerCallbackQuery({ text: "🎨 Генерирую..." });
 
         // Update message to show final state
@@ -168,15 +184,17 @@ export function registerCallbackHandler(bot: Bot): void {
             },
           );
 
+          if (userId) deductBalance(userId, fsCost);
           pendingFaceSwap.delete(userId);
 
           const resultId = Date.now().toString(36);
           promptStore.set(resultId, state.prompt);
           promptStore.set(`seed_${resultId}`, String(result.seed));
 
-          const w = result.width ?? "?";
-          const h = result.height ?? "?";
+          const w = result.width || 0;
+          const h = result.height || 0;
           const seed = result.seed ?? "random";
+          const balAfterRubFs = userId ? formatBalance(userId) : "0 ₽";
 
           const { InlineKeyboard: IK, InputFile: IF } = await import("grammy");
           const resultKeyboard = new IK()
@@ -190,7 +208,7 @@ export function registerCallbackHandler(bot: Bot): void {
             .text("🏠 Сначала", `restart:0`);
 
           await ctx.replyWithPhoto(new IF({ url: result.url }), {
-            caption: `✨ Готово! Твоё фото + промпт\n📐 ${w}×${h} · seed: ${seed}`,
+            caption: `✨ Готово! Твоё фото + промпт\n📐 ${formatSize(w, h)} · seed: ${seed}\n💵 ${formatCost(fsCost)} · 💰 ${balAfterRubFs}`,
             reply_markup: resultKeyboard,
           });
         } catch (error) {
@@ -215,7 +233,24 @@ export function registerCallbackHandler(bot: Bot): void {
 
     // Original callback handlers
     const [action, id] = data.split(":");
-    const prompt = id ? promptStore.get(id) : undefined;
+    let prompt = id ? promptStore.get(id) : undefined;
+
+    // Fallback: extract prompt from the message caption (survives bot restarts)
+    if (!prompt && ctx.callbackQuery.message) {
+      const caption = (ctx.callbackQuery.message as any).caption as string | undefined;
+      if (caption) {
+        // Caption format: "✨ <prompt>\n📐 ..." — extract between ✨ and newline
+        const match = caption.match(/✨\s*(.+?)(?:\n|$)/);
+        if (match) {
+          prompt = match[1].trim();
+          // Re-store for future button presses
+          if (id) {
+            promptStore.set(id, prompt);
+          }
+        }
+      }
+    }
+
     if (!prompt) {
       await ctx.answerCallbackQuery({ text: "Промпт не найден (истёк)" });
       return;
@@ -233,7 +268,7 @@ export function registerCallbackHandler(bot: Bot): void {
         await ctx.reply(
           "📷 Отправь своё фото (портрет, лицо видно чётко).\n\n" +
             "Я совмещу твоё лицо с образом из промпта.\n" +
-            "💰 Стоимость: ~$0.04–0.08\n" +
+            `💰 Стоимость: ${formatCost(COSTS.faceSwap)}\n` +
             "⏱ Время: ~15–30 секунд",
         );
         break;
@@ -256,6 +291,14 @@ export function registerCallbackHandler(bot: Bot): void {
       }
 
       case "regenerate": {
+        const regenCost = COSTS.textToImage;
+        if (userId) {
+          const bal = getBalance(userId);
+          if (bal < regenCost) {
+            await ctx.answerCallbackQuery({ text: `❌ Недостаточно средств (${formatBalance(userId)})` });
+            break;
+          }
+        }
         await ctx.answerCallbackQuery({ text: "🔄 Генерирую новый вариант..." });
         await ctx.replyWithChatAction("upload_photo");
         const typingInterval = setInterval(() => {
@@ -265,6 +308,8 @@ export function registerCallbackHandler(bot: Bot): void {
         try {
           const { generateImage } = await import("../../services/seedream.js");
           const result = await generateImage(prompt);
+
+          if (userId) deductBalance(userId, regenCost);
 
           const newId = Date.now().toString(36);
           promptStore.set(newId, prompt);
@@ -281,12 +326,13 @@ export function registerCallbackHandler(bot: Bot): void {
             .text("💾 Сохранить", `save_prompt:${newId}`)
             .text("🏠 Сначала", `restart:0`);
 
-          const w = result.width ?? "?";
-          const h = result.height ?? "?";
+          const w = result.width || 0;
+          const h = result.height || 0;
           const seed = result.seed ?? "random";
+          const balAfterRub = userId ? formatBalance(userId) : "0 ₽";
 
           await ctx.replyWithPhoto(new IF({ url: result.url }), {
-            caption: `🔄 Новый вариант\n📐 ${w}×${h} · seed: ${seed}`,
+            caption: `🔄 Новый вариант\n📐 ${formatSize(w, h)} · seed: ${seed}\n💵 ${formatCost(regenCost)} · 💰 ${balAfterRub}`,
             reply_markup: kb,
           });
         } catch (error) {
