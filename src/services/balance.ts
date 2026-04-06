@@ -8,6 +8,10 @@ const BALANCE_FILE = join(dirname(fileURLToPath(import.meta.url)), "../../data/b
 export const COSTS = {
   textToImage: 0.04,
   faceSwap: 0.08,
+  threeDFast: 0.08,     // TripoSR
+  threeDStandard: 0.10,  // Hunyuan3D mini turbo + background removal
+  threeDHigh: 0.05,      // Trellis + background removal
+  cadGeneration: 0.02,   // Claude Vision + Claude code gen (no GPU cost)
 } as const;
 
 // Display markup: user sees cost ×3 in RUB

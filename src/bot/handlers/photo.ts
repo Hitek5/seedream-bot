@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard, InputFile } from "grammy";
+import { Bot, InlineKeyboard } from "grammy";
 import { analyzeImage, extractHairColor } from "../../services/vision.js";
 import { promptStore, pendingFaceSwap, buildParamKeyboard, buildParamText } from "./callback.js";
 
@@ -59,15 +59,19 @@ export function registerPhotoHandler(bot: Bot): void {
       promptStore.set(`ref_${id}`, fileUrl);
 
       const keyboard = new InlineKeyboard()
-        .text("🧑 Создать с моим фото", `face_swap:${id}`)
+        .text("🎨 Сгенерировать", `generate:${id}`)
+        .text("🧑 С моим фото", `face_swap:${id}`)
         .row()
-        .text("✏️ Редактировать промпт", `edit_prompt:${id}`)
+        .text("🗿 3D модель", `threed_menu:${id}`)
+        .text("⚙️ CAD модель", `cad_generate:${id}`)
+        .row()
+        .text("✏️ Редактировать", `edit_prompt:${id}`)
         .text("💾 В библиотеку", `save_prompt:${id}`)
         .row()
         .text("🏠 Сначала", `restart:0`);
 
-      const cost = "$0.04–0.08";
-      const time = "~15–30 сек";
+      const cost = "$0.04–0.10";
+      const time = "~10–60 сек";
 
       await ctx.reply(
         `📝 *Промпт по картинке:*\n\n\`${escapeMarkdown(prompt)}\`\n\n` +

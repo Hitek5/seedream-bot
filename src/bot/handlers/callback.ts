@@ -1,5 +1,7 @@
 import { Bot, InlineKeyboard, InputFile } from "grammy";
 import { getBalance, deductBalance, formatBalance, formatCost, getBalanceRub, COSTS } from "../../services/balance.js";
+import { removeBackground, generateThreeD, type ThreeDQuality } from "../../services/threed.js";
+import { generateCADFromImage, generateCADFromDescription, isCadQueryAvailable, cleanupCADFiles } from "../../services/cad.js";
 
 function formatSize(w: number, h: number): string {
   if (!w || !h) return "auto";
@@ -122,6 +124,160 @@ export function registerCallbackHandler(bot: Bot): void {
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
     const userId = ctx.from?.id;
+
+    // Handle 3D generation callbacks (threed:quality:id)
+    if (data.startsWith("threed:")) {
+      const parts = data.split(":");
+      const quality = parts[1] as ThreeDQuality;
+      const promptId = parts[2];
+      const refUrl = promptId ? promptStore.get(`ref_${promptId}`) : undefined;
+
+      if (!refUrl) {
+        await ctx.answerCallbackQuery({ text: "Фото не найдено (истекло)" });
+        return;
+      }
+
+      const costMap: Record<ThreeDQuality, number> = {
+        fast: COSTS.threeDFast,
+        standard: COSTS.threeDStandard,
+        high: COSTS.threeDHigh,
+      };
+      const cost = costMap[quality] ?? COSTS.threeDStandard;
+
+      if (userId) {
+        const bal = getBalance(userId);
+        if (bal < cost) {
+          await ctx.answerCallbackQuery({ text: `❌ Недостаточно средств (${formatBalance(userId)})` });
+          return;
+        }
+      }
+
+      await ctx.answerCallbackQuery({ text: "🗿 Генерирую 3D модель..." });
+      await ctx.replyWithChatAction("upload_document");
+
+      const typingInterval = setInterval(() => {
+        ctx.replyWithChatAction("upload_document").catch(() => {});
+      }, 4000);
+
+      try {
+        // Step 1: Remove background
+        await ctx.reply("🔧 Удаляю фон...");
+        const cleanImageUrl = await removeBackground(refUrl);
+
+        // Step 2: Generate 3D
+        await ctx.reply("🗿 Генерирую 3D модель...");
+        const result = await generateThreeD(cleanImageUrl, quality);
+
+        if (userId) deductBalance(userId, cost);
+
+        const qualityLabels: Record<ThreeDQuality, string> = {
+          fast: "⚡ Быстро (TripoSR)",
+          standard: "🎯 Стандарт (Hunyuan3D)",
+          high: "💎 Высокое (Trellis)",
+        };
+
+        const balAfter = userId ? formatBalance(userId) : "0 ₽";
+
+        // Send GLB file
+        await ctx.replyWithDocument(new InputFile({ url: result.modelUrl }, "model.glb"), {
+          caption:
+            `🗿 3D модель готова!\n` +
+            `📦 Формат: GLB\n` +
+            `🎯 Качество: ${qualityLabels[quality]}\n` +
+            `💵 ${formatCost(cost)} · 💰 ${balAfter}\n\n` +
+            `Открой в: Blender, Windows 3D Viewer, online-3d-viewer.com`,
+        });
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Неизвестная ошибка";
+        await ctx.reply(`Ошибка 3D генерации: ${msg}`);
+      } finally {
+        clearInterval(typingInterval);
+      }
+      return;
+    }
+
+    // Handle CAD generation callback
+    if (data.startsWith("cad_generate:")) {
+      const promptId = data.split(":")[1];
+      const refUrl = promptId ? promptStore.get(`ref_${promptId}`) : undefined;
+
+      if (!refUrl) {
+        await ctx.answerCallbackQuery({ text: "Фото не найдено (истекло)" });
+        return;
+      }
+
+      const cost = COSTS.cadGeneration;
+      if (userId) {
+        const bal = getBalance(userId);
+        if (bal < cost) {
+          await ctx.answerCallbackQuery({ text: `❌ Недостаточно средств (${formatBalance(userId)})` });
+          return;
+        }
+      }
+
+      // Check CadQuery availability
+      const cadAvailable = await isCadQueryAvailable();
+      if (!cadAvailable) {
+        await ctx.answerCallbackQuery();
+        await ctx.reply(
+          "⚙️ CadQuery не установлен на сервере.\n" +
+            "Администратор: `pip install cadquery`",
+          { parse_mode: "Markdown" },
+        );
+        return;
+      }
+
+      await ctx.answerCallbackQuery({ text: "⚙️ Генерирую CAD модель..." });
+      await ctx.replyWithChatAction("upload_document");
+
+      const typingInterval = setInterval(() => {
+        ctx.replyWithChatAction("upload_document").catch(() => {});
+      }, 4000);
+
+      try {
+        await ctx.reply("🔍 Анализирую деталь...");
+        const result = await generateCADFromImage(refUrl);
+
+        if (userId) deductBalance(userId, cost);
+        const balAfter = userId ? formatBalance(userId) : "0 ₽";
+
+        // Send STEP file
+        if (result.stepPath) {
+          await ctx.replyWithDocument(
+            new InputFile(result.stepPath, "model.step"),
+            { caption: `📐 STEP файл — открой в FreeCAD, SolidWorks, Fusion 360` },
+          );
+        }
+
+        // Send STL file
+        if (result.stlPath) {
+          await ctx.replyWithDocument(
+            new InputFile(result.stlPath, "model.stl"),
+            { caption: `🗿 STL файл — готов к 3D-печати` },
+          );
+        }
+
+        // Send summary
+        const codePreview = result.code.length > 500
+          ? result.code.slice(0, 500) + "\n..."
+          : result.code;
+
+        await ctx.reply(
+          `⚙️ CAD модель готова!\n\n` +
+            `📝 Описание:\n${result.description.slice(0, 300)}...\n\n` +
+            `💵 ${formatCost(cost)} · 💰 ${balAfter}`,
+        );
+
+        // Cleanup temp files
+        cleanupCADFiles(result);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Неизвестная ошибка";
+        await ctx.reply(`Ошибка CAD генерации: ${msg}`);
+      } finally {
+        clearInterval(typingInterval);
+      }
+      return;
+    }
 
     // Handle face swap parameter buttons
     if (data.startsWith("fs_height:") || data.startsWith("fs_body:") || data.startsWith("fs_hair:")) {
@@ -341,6 +497,81 @@ export function registerCallbackHandler(bot: Bot): void {
         } finally {
           clearInterval(typingInterval);
         }
+        break;
+      }
+
+      case "generate": {
+        // Generate image from analyzed prompt
+        const genCost = COSTS.textToImage;
+        if (userId) {
+          const bal = getBalance(userId);
+          if (bal < genCost) {
+            await ctx.answerCallbackQuery({ text: `❌ Недостаточно средств (${formatBalance(userId)})` });
+            break;
+          }
+        }
+        await ctx.answerCallbackQuery({ text: "🎨 Генерирую..." });
+        await ctx.replyWithChatAction("upload_photo");
+        const genTyping = setInterval(() => {
+          ctx.replyWithChatAction("upload_photo").catch(() => {});
+        }, 4000);
+
+        try {
+          const { generateImage } = await import("../../services/seedream.js");
+          const result = await generateImage(prompt);
+          if (userId) deductBalance(userId, genCost);
+
+          const newId = Date.now().toString(36);
+          promptStore.set(newId, prompt);
+          promptStore.set(`seed_${newId}`, String(result.seed));
+
+          const kb = new InlineKeyboard()
+            .text("🔄 Ещё вариант", `regenerate:${newId}`)
+            .text("✏️ Изменить", `edit_prompt:${newId}`)
+            .row()
+            .text("🧑 С моим фото", `face_swap:${newId}`)
+            .text("💾 Сохранить", `save_prompt:${newId}`)
+            .row()
+            .text("🏠 Сначала", `restart:0`);
+
+          const w = result.width || 0;
+          const h = result.height || 0;
+          const balAfter = userId ? formatBalance(userId) : "0 ₽";
+
+          await ctx.replyWithPhoto(new InputFile({ url: result.url }), {
+            caption: `✨ Готово!\n📐 ${formatSize(w, h)} · seed: ${result.seed}\n💵 ${formatCost(genCost)} · 💰 ${balAfter}`,
+            reply_markup: kb,
+          });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : "Неизвестная ошибка";
+          await ctx.reply(`Ошибка генерации: ${msg}`);
+        } finally {
+          clearInterval(genTyping);
+        }
+        break;
+      }
+
+      case "threed_menu": {
+        // Show 3D quality options
+        await ctx.answerCallbackQuery();
+        const kb3d = new InlineKeyboard()
+          .text(`⚡ Быстро (${formatCost(COSTS.threeDFast)})`, `threed:fast:${id}`)
+          .row()
+          .text(`🎯 Стандарт (${formatCost(COSTS.threeDStandard)})`, `threed:standard:${id}`)
+          .row()
+          .text(`💎 Высокое (${formatCost(COSTS.threeDHigh)})`, `threed:high:${id}`)
+          .row()
+          .text("🏠 Назад", `restart:0`);
+
+        await ctx.reply(
+          "🗿 *Генерация 3D модели*\n\n" +
+            "Выбери качество:\n" +
+            "⚡ *Быстро* — TripoSR, <1 сек, базовая геометрия\n" +
+            "🎯 *Стандарт* — Hunyuan3D, ~15 сек, хорошая детализация\n" +
+            "💎 *Высокое* — Trellis, ~30 сек, лучшая топология\n\n" +
+            "Результат: GLB файл для 3D\\-печати или просмотра",
+          { parse_mode: "MarkdownV2", reply_markup: kb3d },
+        );
         break;
       }
 

@@ -5,6 +5,7 @@ import { promptStore } from "./handlers/callback.js";
 import { registerPhotoHandler } from "./handlers/photo.js";
 import { registerCallbackHandler } from "./handlers/callback.js";
 import { getBalance, deductBalance, formatBalance, formatCost, getBalanceRub, COSTS } from "../services/balance.js";
+import { generateCADFromDescription, isCadQueryAvailable } from "../services/cad.js";
 
 // Persistent reply keyboard — always visible
 const mainKeyboard = new Keyboard()
@@ -35,13 +36,89 @@ export function createBot(): Bot {
   // /start — greeting + keyboard
   bot.command("start", (ctx) =>
     ctx.reply(
-      "Привет! Я генерирую картинки через Seedream v4.5 ✨\n\n" +
-        "Просто напиши что хочешь увидеть — и я создам.\n" +
-        "Или отправь фото — я проанализирую и предложу промпт.\n\n" +
+      "Привет! Я генерирую картинки и 3D модели ✨\n\n" +
+        "📷 Отправь фото — получишь промпт + варианты:\n" +
+        "  🎨 Сгенерировать картинку\n" +
+        "  🗿 3D модель (для печати/просмотра)\n" +
+        "  ⚙️ CAD модель (STEP для инженерии)\n\n" +
+        "✍️ Напиши текст — сгенерирую картинку\n" +
+        "/cad <описание> — CAD модель по описанию\n\n" +
         "Попробуй: «космический кот на крыше небоскрёба»",
       { reply_markup: mainKeyboard },
     ),
   );
+
+  // /cad <description> — generate CAD model from text
+  bot.command("cad", async (ctx) => {
+    const description = ctx.match?.trim();
+    if (!description) {
+      return ctx.reply(
+        "⚙️ Опиши деталь для CAD-моделирования:\n\n" +
+          "Пример: `/cad bracket 80x40x3mm with 4 mounting holes 6mm, fillets 3mm`",
+        { parse_mode: "Markdown", reply_markup: mainKeyboard },
+      );
+    }
+
+    const userId = ctx.from?.id;
+    const cost = COSTS.cadGeneration;
+
+    if (userId) {
+      const bal = getBalance(userId);
+      if (bal < cost) {
+        return ctx.reply(
+          `❌ Недостаточно средств.\n💰 ${formatBalance(userId)} · 💵 ${formatCost(cost)}`,
+          { reply_markup: mainKeyboard },
+        );
+      }
+    }
+
+    const cadAvailable = await isCadQueryAvailable();
+    if (!cadAvailable) {
+      return ctx.reply("⚙️ CadQuery не установлен. Администратор: `pip install cadquery`", {
+        parse_mode: "Markdown",
+        reply_markup: mainKeyboard,
+      });
+    }
+
+    await ctx.replyWithChatAction("upload_document");
+    const typingInterval = setInterval(() => {
+      ctx.replyWithChatAction("upload_document").catch(() => {});
+    }, 4000);
+
+    try {
+      await ctx.reply("⚙️ Генерирую CAD модель...");
+      const result = await generateCADFromDescription(description);
+
+      if (userId) deductBalance(userId, cost);
+      const balAfter = userId ? formatBalance(userId) : "0 ₽";
+
+      if (result.stepPath) {
+        await ctx.replyWithDocument(
+          new InputFile(result.stepPath, "model.step"),
+          { caption: "📐 STEP — FreeCAD, SolidWorks, Fusion 360" },
+        );
+      }
+      if (result.stlPath) {
+        await ctx.replyWithDocument(
+          new InputFile(result.stlPath, "model.stl"),
+          { caption: "🗿 STL — готов к 3D-печати" },
+        );
+      }
+
+      await ctx.reply(`⚙️ Готово! 💵 ${formatCost(cost)} · 💰 ${balAfter}`, {
+        reply_markup: mainKeyboard,
+      });
+
+      // Cleanup
+      const { cleanupCADFiles } = await import("../services/cad.js");
+      cleanupCADFiles(result);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Неизвестная ошибка";
+      await ctx.reply(`Ошибка CAD: ${msg}`, { reply_markup: mainKeyboard });
+    } finally {
+      clearInterval(typingInterval);
+    }
+  });
 
   // Keep /imagine for backward compat
   bot.command("imagine", (ctx) => handleGenerate(ctx, ctx.match?.trim()));
@@ -74,15 +151,22 @@ export function createBot(): Bot {
   bot.hears("ℹ️ Помощь", (ctx) =>
     ctx.reply(
       "🎨 *Как пользоваться:*\n\n" +
+        "*Картинки:*\n" +
         "• Напиши текст → получишь картинку\n" +
-        "• Отправь фото → получишь промпт по нему\n" +
+        "• Отправь фото → промпт \\+ генерация\n" +
         "• 🎲 Случайный → сюрприз\\!\n\n" +
+        "*3D модели:*\n" +
+        "• Отправь фото → нажми 🗿 3D модель\n" +
+        "• 3 уровня качества: быстро/стандарт/высокое\n" +
+        "• Результат: GLB файл для печати\n\n" +
+        "*CAD модели:*\n" +
+        "• Отправь фото детали → нажми ⚙️ CAD\n" +
+        "• Или: `/cad bracket 80x40mm with holes`\n" +
+        "• Результат: STEP \\+ STL файлы\n\n" +
         "💡 *Советы:*\n" +
-        "• Пиши на английском для лучшего качества\n" +
-        "• Добавляй стиль: _cinematic, watercolor, anime_\n" +
-        "• Описывай свет: _golden hour, dramatic lighting_\n\n" +
-        "После генерации используй кнопки под картинкой:\n" +
-        "🔄 Ещё вариант · ✏️ Изменить · 🧑 С моим фото",
+        "• Для 3D: фото на чистом фоне\n" +
+        "• Для CAD: фото инженерной детали\n" +
+        "• Пиши на английском для лучшего результата",
       { parse_mode: "MarkdownV2", reply_markup: mainKeyboard },
     ),
   );
