@@ -39,6 +39,9 @@ export async function generateImage(
 
 /**
  * Upload a Telegram file URL to fal.ai storage (Telegram URLs are not publicly accessible).
+ * The Telegram file URL embeds the bot token, so it is only fetched locally here and
+ * never sent to fal.ai — external services receive the resulting fal storage URL.
+ * New code should prefer uploadTelegramFileToFal() from tgfile.ts (works from file_id).
  */
 async function uploadToFal(telegramUrl: string): Promise<string> {
   const response = await fetch(telegramUrl);
@@ -66,8 +69,11 @@ export async function generateWithFaceSwap(
   options: GenerateOptions = {},
   faceSwapParams: FaceSwapParams = {},
 ): Promise<GenerateResult> {
-  // Upload user's photo to fal.ai storage (Telegram URLs aren't public)
-  const falImageUrl = await uploadToFal(userPhotoUrl);
+  // userPhotoUrl is normally already a fal.ai storage URL (uploaded in the photo handler).
+  // Defensively re-upload if a Telegram file URL (contains the bot token) slips through.
+  const falImageUrl = userPhotoUrl.includes("api.telegram.org")
+    ? await uploadToFal(userPhotoUrl)
+    : userPhotoUrl;
 
   // Build body description from params
   const bodyParts: string[] = [];
