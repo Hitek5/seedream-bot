@@ -1,10 +1,14 @@
 import { execFile } from "child_process";
-import { writeFileSync, existsSync, mkdirSync, unlinkSync, readFileSync } from "fs";
+import { writeFileSync, existsSync, mkdirSync, unlinkSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { randomBytes } from "crypto";
 import { analyzeImageForCAD } from "./vision.js";
 import { generateWithClaude } from "./claude.js";
+
+// Python interpreter with CadQuery installed. The availability check and the
+// actual execution MUST use the same interpreter.
+const CADQUERY_PYTHON = process.env.CADQUERY_PYTHON ?? "/opt/cadquery-env/bin/python3";
 
 const CAD_CODE_SYSTEM_PROMPT = `You are a CadQuery expert. Generate Python code that creates the described mechanical part.
 
@@ -62,7 +66,7 @@ export interface CADResult {
  */
 export async function isCadQueryAvailable(): Promise<boolean> {
   return new Promise((resolve) => {
-    execFile("/opt/cadquery-env/bin/python3", ["-c", "import cadquery; print('ok')"], { timeout: 10000 }, (err, stdout) => {
+    execFile(CADQUERY_PYTHON, ["-c", "import cadquery; print('ok')"], { timeout: 10000 }, (err, stdout) => {
       resolve(!err && stdout.trim() === "ok");
     });
   });
@@ -113,7 +117,7 @@ async function executeCADCode(code: string, description: string): Promise<CADRes
 
   return new Promise((resolve, reject) => {
     execFile(
-      "python3",
+      CADQUERY_PYTHON,
       [scriptPath, workDir],
       { timeout: 60000, maxBuffer: 1024 * 1024 },
       (error, stdout, stderr) => {
@@ -158,7 +162,8 @@ export function cleanupCADFiles(result: CADResult): void {
         : null;
     if (dir) {
       try { unlinkSync(join(dir, "generate.py")); } catch {}
-      try { require("fs").rmdirSync(dir); } catch {}
+      // require() is unavailable in ESM — use the imported rmSync
+      try { rmSync(dir, { recursive: true, force: true }); } catch {}
     }
   } catch {
     // ignore cleanup errors

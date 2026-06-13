@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -28,19 +28,37 @@ function ensureDir(): void {
 }
 
 function loadBalances(): Balances {
-  try {
-    if (existsSync(BALANCE_FILE)) {
-      return JSON.parse(readFileSync(BALANCE_FILE, "utf-8"));
-    }
-  } catch {
-    // corrupted file — reset
+  if (!existsSync(BALANCE_FILE)) {
+    // Missing file (fresh install) — start with an empty ledger;
+    // the file is created on the first write in saveBalances().
+    return {};
   }
-  return {};
+  try {
+    return JSON.parse(readFileSync(BALANCE_FILE, "utf-8"));
+  } catch (error) {
+    // Corrupted file — NEVER silently reset balances. Move the broken file
+    // aside first, log loudly, and only then continue with an empty ledger.
+    const backupPath = `${BALANCE_FILE}.corrupt-${Date.now()}`;
+    try {
+      renameSync(BALANCE_FILE, backupPath);
+    } catch (renameError) {
+      console.error(`[balance] failed to move corrupted balances.json aside:`, renameError);
+    }
+    console.error(
+      `[balance] balances.json is corrupted! Moved to ${backupPath}, continuing with empty balances.`,
+      error,
+    );
+    return {};
+  }
 }
 
 function saveBalances(balances: Balances): void {
   ensureDir();
-  writeFileSync(BALANCE_FILE, JSON.stringify(balances, null, 2));
+  // Atomic write: write to a temp file, then rename over the target,
+  // so a crash mid-write cannot leave a truncated balances.json.
+  const tmpPath = `${BALANCE_FILE}.tmp`;
+  writeFileSync(tmpPath, JSON.stringify(balances, null, 2));
+  renameSync(tmpPath, BALANCE_FILE);
 }
 
 export function getBalance(userId: number): number {

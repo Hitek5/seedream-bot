@@ -1,5 +1,6 @@
 import { Bot, InlineKeyboard } from "grammy";
 import { analyzeImage, extractHairColor } from "../../services/vision.js";
+import { uploadTelegramFileToFal } from "../../services/tgfile.js";
 import { promptStore, pendingFaceSwap, buildParamKeyboard, buildParamText } from "./callback.js";
 
 export function registerPhotoHandler(bot: Bot): void {
@@ -10,12 +11,13 @@ export function registerPhotoHandler(bot: Bot): void {
     // Check if user is uploading their face photo for a pending generation
     const pending = pendingFaceSwap.get(userId);
     if (pending && !pending.userPhotoUrl) {
-      // Get user's photo URL
+      // Re-upload the user's photo to fal.ai storage. The Telegram file URL
+      // embeds the bot token and must never be handed to external services.
       const photo = ctx.message.photo[ctx.message.photo.length - 1];
-      const file = await ctx.api.getFile(photo.file_id);
-      const userPhotoUrl = `https://api.telegram.org/file/bot${ctx.api.token}/${file.file_path}`;
 
       await ctx.replyWithChatAction("typing");
+
+      const userPhotoUrl = await uploadTelegramFileToFal(ctx.api, photo.file_id);
 
       // Analyze hair color from photo
       let hairColor: string | null = null;
@@ -42,14 +44,16 @@ export function registerPhotoHandler(bot: Bot): void {
     await ctx.replyWithChatAction("typing");
 
     const photo = ctx.message.photo[ctx.message.photo.length - 1];
-    const file = await ctx.api.getFile(photo.file_id);
-    const fileUrl = `https://api.telegram.org/file/bot${ctx.api.token}/${file.file_path}`;
 
     const typingInterval = setInterval(() => {
       ctx.replyWithChatAction("typing").catch(() => {});
     }, 4000);
 
     try {
+      // Telegram file URLs embed the bot token — fetch locally, re-upload to
+      // fal.ai storage and only ever hand the fal storage URL to external
+      // services (Florence-2/birefnet/Seedream on fal, Claude Vision).
+      const fileUrl = await uploadTelegramFileToFal(ctx.api, photo.file_id);
       const prompt = await analyzeImage(fileUrl);
 
       const id = Date.now().toString(36);
