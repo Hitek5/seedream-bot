@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Seedream Bot — BPMN 2.0 модель работы (аудит 2026-06).
+  Seedream Bot — BPMN 2.0 модель работы (аудит 2026-06, переоформление подписей/раскладки).
   Открывается в bpmn.io (https://demo.bpmn.io) или Camunda Modeler.
+  Короткие подписи узлов; детали — в <bpmn:documentation> (всплывают при наведении/в панели).
+  Акторы вынесены в пулы/дорожки: Пользователь, Бот, fal.ai, Anthropic, Telegram API.
   Процессы: P1 текст→картинка (+петля P4 «Ещё вариант»), P2 фото→промпт,
   P3 face swap, P5 3D модель, P6 CAD (CadQuery).
 -->
@@ -18,24 +20,23 @@
     <bpmn:participant id="P_tg" name="Telegram API (getFile)" />
     <bpmn:participant id="P_fal" name="fal.ai (Seedream / Florence-2 / birefnet / 3D)" />
     <bpmn:participant id="P_anthropic" name="Anthropic (Claude Vision / кодоген)" />
-
     <bpmn:messageFlow id="MF_text" name="текст промпта" sourceRef="P_user" targetRef="Start_text" />
     <bpmn:messageFlow id="MF_photo" name="фото" sourceRef="P_user" targetRef="Start_photo" />
-    <bpmn:messageFlow id="MF_fs" name="кнопка «С моим фото» + фото" sourceRef="P_user" targetRef="Start_fs" />
-    <bpmn:messageFlow id="MF_3d" name="кнопка «3D модель»" sourceRef="P_user" targetRef="Start_3d" />
-    <bpmn:messageFlow id="MF_cad" name="/cad описание или кнопка" sourceRef="P_user" targetRef="Start_cad" />
+    <bpmn:messageFlow id="MF_fs" name="«С моим фото» + фото" sourceRef="P_user" targetRef="Start_fs" />
+    <bpmn:messageFlow id="MF_3d" name="«3D модель»" sourceRef="P_user" targetRef="Start_3d" />
+    <bpmn:messageFlow id="MF_cad" name="/cad или кнопка" sourceRef="P_user" targetRef="Start_cad" />
     <bpmn:messageFlow id="MF_res1" name="картинка + кнопки" sourceRef="Task_result1" targetRef="P_user" />
     <bpmn:messageFlow id="MF_res2" name="промпт + кнопки" sourceRef="Task_buttons" targetRef="P_user" />
     <bpmn:messageFlow id="MF_res3" name="face swap результат" sourceRef="Task_result3" targetRef="P_user" />
     <bpmn:messageFlow id="MF_glb" name="GLB-файл" sourceRef="Task_glb" targetRef="P_user" />
     <bpmn:messageFlow id="MF_cad_files" name="STEP + STL" sourceRef="Task_send_cad" targetRef="P_user" />
-    <bpmn:messageFlow id="MF_t2i" name="t2i: промпт → картинка" sourceRef="Task_t2i" targetRef="P_fal" />
-    <bpmn:messageFlow id="MF_getfile" name="getFile + скачивание байтов (URL с токеном не уходит наружу)" sourceRef="Task_getfile" targetRef="P_tg" />
-    <bpmn:messageFlow id="MF_upfal" name="загрузка фото → fal-URL" sourceRef="Task_upfal" targetRef="P_fal" />
-    <bpmn:messageFlow id="MF_cv" name="изображение (base64) → промпт" sourceRef="Task_cv" targetRef="P_anthropic" />
+    <bpmn:messageFlow id="MF_t2i" name="промпт → картинка" sourceRef="Task_t2i" targetRef="P_fal" />
+    <bpmn:messageFlow id="MF_getfile" name="getFile (байты, токен не уходит)" sourceRef="Task_getfile" targetRef="P_tg" />
+    <bpmn:messageFlow id="MF_upfal" name="фото → fal-URL" sourceRef="Task_upfal" targetRef="P_fal" />
+    <bpmn:messageFlow id="MF_cv" name="изображение → промпт" sourceRef="Task_cv" targetRef="P_anthropic" />
     <bpmn:messageFlow id="MF_florence" name="Florence-2 caption" sourceRef="Task_florence" targetRef="P_fal" />
     <bpmn:messageFlow id="MF_edit" name="edit: face swap" sourceRef="Task_edit" targetRef="P_fal" />
-    <bpmn:messageFlow id="MF_gen3d" name="birefnet → 3D-генерация" sourceRef="Task_gen3d" targetRef="P_fal" />
+    <bpmn:messageFlow id="MF_gen3d" name="birefnet → 3D" sourceRef="Task_gen3d" targetRef="P_fal" />
     <bpmn:messageFlow id="MF_cadgen" name="описание → CadQuery-код" sourceRef="Task_cad_code" targetRef="P_anthropic" />
   </bpmn:collaboration>
 
@@ -128,93 +129,114 @@
       </bpmn:lane>
     </bpmn:laneSet>
 
-    <!-- P1. Текст → картинка -->
-    <bpmn:startEvent id="Start_text" name="Текстовое сообщение">
+    <!-- P1. Текст → картинка (+P4 «Ещё вариант») -->
+    <bpmn:startEvent id="Start_text" name="Текст от юзера">
+      <bpmn:documentation>Пользователь: присылает обычное текстовое сообщение — описание желаемой картинки. Это запускает процесс P1 (текст→картинка).</bpmn:documentation>
       <bpmn:outgoing>a1</bpmn:outgoing>
       <bpmn:messageEventDefinition id="MED_text" />
     </bpmn:startEvent>
     <bpmn:exclusiveGateway id="GW_empty" name="Промпт пуст?">
+      <bpmn:documentation>Система (Бот): проверяет, есть ли в сообщении текст промпта. Пустой ⇒ ветка подсказки; иначе ⇒ проверка баланса.</bpmn:documentation>
       <bpmn:incoming>a1</bpmn:incoming>
       <bpmn:outgoing>a2</bpmn:outgoing>
       <bpmn:outgoing>a4</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:sendTask id="Task_hint" name="Подсказка «Напиши что хочешь увидеть»">
+    <bpmn:sendTask id="Task_hint" name="Показать подсказку">
+      <bpmn:documentation>Система (Бот): отправляет подсказку «Напиши, что хочешь увидеть» и пример промпта.</bpmn:documentation>
       <bpmn:incoming>a2</bpmn:incoming>
       <bpmn:outgoing>a3</bpmn:outgoing>
     </bpmn:sendTask>
     <bpmn:endEvent id="End_hint" name="Подсказка показана">
+      <bpmn:documentation>Система (Бот): конец ветки: пользователь получил инструкцию, генерация не запускалась.</bpmn:documentation>
       <bpmn:incoming>a3</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:exclusiveGateway id="GW_bal1" name="Баланс ≥ $0.04?">
+    <bpmn:exclusiveGateway id="GW_bal1" name="Баланс &lt; $0.04?">
+      <bpmn:documentation>Система (Бот): сравнивает баланс пользователя с ценой генерации $0.04 (Seedream v4.5 t2i). Недостаточно ⇒ отказ; иначе ⇒ запуск. Сюда же возвращается петля «Ещё вариант» (P4).</bpmn:documentation>
       <bpmn:incoming>a4</bpmn:incoming>
       <bpmn:incoming>a15</bpmn:incoming>
       <bpmn:outgoing>a5</bpmn:outgoing>
       <bpmn:outgoing>a7</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:sendTask id="Task_nofunds1" name="Ответ «Недостаточно средств»">
+    <bpmn:sendTask id="Task_nofunds1" name="Сообщить об отказе">
+      <bpmn:documentation>Система (Бот): отвечает «Недостаточно средств» и подсказывает пополнить баланс.</bpmn:documentation>
       <bpmn:incoming>a5</bpmn:incoming>
       <bpmn:outgoing>a6</bpmn:outgoing>
     </bpmn:sendTask>
     <bpmn:endEvent id="End_nofunds1" name="Отказ: нет средств">
+      <bpmn:documentation>Система (Бот): конец ветки: баланс ниже $0.04, генерация не выполнялась.</bpmn:documentation>
       <bpmn:incoming>a6</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:task id="Task_progress" name="chatAction + таймер 4 c (имитация прогресса)">
+    <bpmn:task id="Task_progress" name="Показать прогресс">
+      <bpmn:documentation>Система (Бот): шлёт chatAction «upload_photo» и крутит таймер ~4 c для имитации прогресса (реального onQueueUpdate нет).</bpmn:documentation>
       <bpmn:incoming>a7</bpmn:incoming>
       <bpmn:outgoing>a8</bpmn:outgoing>
     </bpmn:task>
-    <bpmn:serviceTask id="Task_t2i" name="fal.subscribe: Seedream v4.5 t2i (без таймаута и ретраев)">
+    <bpmn:serviceTask id="Task_t2i" name="Сгенерировать t2i">
+      <bpmn:documentation>Внешний сервис (fal.ai): fal.subscribe на fal-ai/bytedance/seedream/v4.5/text-to-image: промпт → картинка. Без явного timeout, без onQueueUpdate и без ретраев.</bpmn:documentation>
       <bpmn:incoming>a8</bpmn:incoming>
       <bpmn:outgoing>a9</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:exclusiveGateway id="GW_ok1" name="Генерация успешна?">
+    <bpmn:exclusiveGateway id="GW_ok1" name="Генерация ОК?">
+      <bpmn:documentation>Система (Бот): проверяет результат вызова fal.ai. Успех ⇒ списание и выдача; ошибка ⇒ разбор типа ошибки.</bpmn:documentation>
       <bpmn:incoming>a9</bpmn:incoming>
       <bpmn:outgoing>a10</bpmn:outgoing>
       <bpmn:outgoing>a16</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:task id="Task_deduct1" name="deductBalance $0.04 (после генерации)">
+    <bpmn:task id="Task_deduct1" name="Списать $0.04">
+      <bpmn:documentation>Система (Бот): deductBalance: списывает $0.04 ПОСЛЕ успешной генерации (резервирования средств нет; deductBalance=false игнорируется).</bpmn:documentation>
       <bpmn:incoming>a10</bpmn:incoming>
       <bpmn:outgoing>a11</bpmn:outgoing>
     </bpmn:task>
-    <bpmn:task id="Task_store1" name="promptStore: prompt + seed (in-memory)">
+    <bpmn:task id="Task_store1" name="Сохранить промпт">
+      <bpmn:documentation>Система (Бот): promptStore: кладёт prompt и seed в in-memory Map для кнопок «Ещё вариант»/«Изменить» (seed пишется, но не переиспользуется).</bpmn:documentation>
       <bpmn:incoming>a11</bpmn:incoming>
       <bpmn:outgoing>a12</bpmn:outgoing>
     </bpmn:task>
-    <bpmn:sendTask id="Task_result1" name="replyWithPhoto + кнопки (Ещё вариант / Изменить / С моим фото / Сохранить / Сначала)">
+    <bpmn:sendTask id="Task_result1" name="Отправить картинку">
+      <bpmn:documentation>Система (Бот): replyWithPhoto + инлайн-кнопки: Ещё вариант / Изменить / С моим фото / Сохранить / Сначала.</bpmn:documentation>
       <bpmn:incoming>a12</bpmn:incoming>
       <bpmn:outgoing>a13</bpmn:outgoing>
     </bpmn:sendTask>
-    <bpmn:exclusiveGateway id="GW_more" name="Нажата «Ещё вариант»?">
+    <bpmn:exclusiveGateway id="GW_more" name="Нажато «Ещё»?">
+      <bpmn:documentation>Система (Бот): ждёт реакции на кнопки. «Ещё вариант» ⇒ петля P4 (повтор генерации тем же промптом); иначе ⇒ завершение.</bpmn:documentation>
       <bpmn:incoming>a13</bpmn:incoming>
       <bpmn:outgoing>a14</bpmn:outgoing>
       <bpmn:outgoing>a15</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:endEvent id="End_done1" name="Картинка доставлена">
+      <bpmn:documentation>Система (Бот): конец основного сценария P1: пользователь получил изображение.</bpmn:documentation>
       <bpmn:incoming>a14</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:exclusiveGateway id="GW_errtype" name="Тип ошибки? (getErrorMessage)">
+    <bpmn:exclusiveGateway id="GW_errtype" name="Тип ошибки?">
+      <bpmn:documentation>Система (Бот): getErrorMessage: классифицирует ошибку fal.ai по подстрокам (timeout / safety|nsfw|content_filter / rate|429 / прочее).</bpmn:documentation>
       <bpmn:incoming>a16</bpmn:incoming>
       <bpmn:outgoing>a17</bpmn:outgoing>
       <bpmn:outgoing>a18</bpmn:outgoing>
       <bpmn:outgoing>a19</bpmn:outgoing>
       <bpmn:outgoing>a20</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:sendTask id="Task_err_timeout" name="Ответ «Таймаут fal.ai»">
+    <bpmn:sendTask id="Task_err_timeout" name="Ответ: таймаут">
+      <bpmn:documentation>Система (Бот): сообщает «fal.ai не ответил вовремя (таймаут)» и предлагает повторить.</bpmn:documentation>
       <bpmn:incoming>a17</bpmn:incoming>
       <bpmn:outgoing>a21</bpmn:outgoing>
     </bpmn:sendTask>
-    <bpmn:sendTask id="Task_err_nsfw" name="Ответ «Заблокировано фильтром безопасности»">
+    <bpmn:sendTask id="Task_err_nsfw" name="Ответ: NSFW">
+      <bpmn:documentation>Система (Бот): сообщает, что запрос заблокирован фильтром безопасности (safety/nsfw/content_filter).</bpmn:documentation>
       <bpmn:incoming>a18</bpmn:incoming>
       <bpmn:outgoing>a22</bpmn:outgoing>
     </bpmn:sendTask>
-    <bpmn:sendTask id="Task_err_rate" name="Ответ «Слишком много запросов»">
+    <bpmn:sendTask id="Task_err_rate" name="Ответ: rate limit">
+      <bpmn:documentation>Система (Бот): сообщает «Слишком много запросов» (rate limit / HTTP 429), просит подождать.</bpmn:documentation>
       <bpmn:incoming>a19</bpmn:incoming>
       <bpmn:outgoing>a23</bpmn:outgoing>
     </bpmn:sendTask>
-    <bpmn:sendTask id="Task_err_other" name="Ответ с текстом ошибки">
+    <bpmn:sendTask id="Task_err_other" name="Ответ: иная ошибка">
+      <bpmn:documentation>Система (Бот): показывает текст прочей ошибки fal.ai как есть.</bpmn:documentation>
       <bpmn:incoming>a20</bpmn:incoming>
       <bpmn:outgoing>a24</bpmn:outgoing>
     </bpmn:sendTask>
     <bpmn:endEvent id="End_err1" name="Ошибка показана">
+      <bpmn:documentation>Система (Бот): конец ветки ошибок: пользователь уведомлён, списания не было.</bpmn:documentation>
       <bpmn:incoming>a21</bpmn:incoming>
       <bpmn:incoming>a22</bpmn:incoming>
       <bpmn:incoming>a23</bpmn:incoming>
@@ -222,244 +244,298 @@
     </bpmn:endEvent>
 
     <!-- P2. Фото → промпт -->
-    <bpmn:startEvent id="Start_photo" name="Фото получено">
+    <bpmn:startEvent id="Start_photo" name="Фото от юзера">
+      <bpmn:documentation>Пользователь: присылает фотографию. Запускает P2 (фото→промпт) либо передаёт фото в P3, если идёт face swap.</bpmn:documentation>
       <bpmn:outgoing>b1</bpmn:outgoing>
       <bpmn:messageEventDefinition id="MED_photo" />
     </bpmn:startEvent>
-    <bpmn:exclusiveGateway id="GW_pending" name="pendingFaceSwap активен?">
+    <bpmn:exclusiveGateway id="GW_pending" name="Ждём фото FS?">
+      <bpmn:documentation>Система (Бот): проверяет флаг pendingFaceSwap. Активен ⇒ это фото для face swap (P3); иначе ⇒ анализ фото в P2.</bpmn:documentation>
       <bpmn:incoming>b1</bpmn:incoming>
       <bpmn:outgoing>b2</bpmn:outgoing>
       <bpmn:outgoing>b3</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:serviceTask id="Task_getfile" name="getFile: скачать байты фото">
+    <bpmn:serviceTask id="Task_getfile" name="Скачать байты">
+      <bpmn:documentation>Внешний сервис (Telegram API): getFile + скачивание байтов фото. URL вида api.telegram.org/file/bot&lt;TOKEN&gt;/… наружу не передаётся (только байты).</bpmn:documentation>
       <bpmn:incoming>b3</bpmn:incoming>
       <bpmn:outgoing>b4</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:serviceTask id="Task_upfal" name="Загрузить в fal.storage (fal-URL без токена)">
+    <bpmn:serviceTask id="Task_upfal" name="Загрузить в fal">
+      <bpmn:documentation>Внешний сервис (fal.ai): fal.storage.upload: кладёт байты фото и получает fal-URL без токена для дальнейшего анализа/редактирования.</bpmn:documentation>
       <bpmn:incoming>b4</bpmn:incoming>
       <bpmn:outgoing>b5</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:exclusiveGateway id="GW_key" name="ANTHROPIC_API_KEY задан?">
+    <bpmn:exclusiveGateway id="GW_key" name="Есть API-ключ?">
+      <bpmn:documentation>Система (Бот): проверяет ANTHROPIC_API_KEY. Задан ⇒ Claude Vision; не задан ⇒ сразу Florence-2.</bpmn:documentation>
       <bpmn:incoming>b5</bpmn:incoming>
       <bpmn:outgoing>b6</bpmn:outgoing>
       <bpmn:outgoing>b10</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:serviceTask id="Task_cv" name="Claude Vision: Seedream-промпт по фото">
+    <bpmn:serviceTask id="Task_cv" name="Claude Vision">
+      <bpmn:documentation>Внешний сервис (Anthropic): Claude Vision (claude-sonnet-4) по изображению (base64) формирует Seedream-промпт. Анализ бесплатный и без лимитов.</bpmn:documentation>
       <bpmn:incoming>b6</bpmn:incoming>
       <bpmn:outgoing>b7</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:exclusiveGateway id="GW_cv_ok" name="Claude успешен?">
+    <bpmn:exclusiveGateway id="GW_cv_ok" name="Claude ОК?">
+      <bpmn:documentation>Система (Бот): проверяет ответ Claude. Успех ⇒ выдача промпта; ошибка ⇒ fallback Florence-2.</bpmn:documentation>
       <bpmn:incoming>b7</bpmn:incoming>
       <bpmn:outgoing>b8</bpmn:outgoing>
       <bpmn:outgoing>b9</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:serviceTask id="Task_florence" name="Fallback: Florence-2 caption + теги качества">
+    <bpmn:serviceTask id="Task_florence" name="Florence-2 caption">
+      <bpmn:documentation>Внешний сервис (fal.ai): fallback: Florence-2 на fal.ai строит caption + добавляет теги качества, когда Claude недоступен или упал.</bpmn:documentation>
       <bpmn:incoming>b9</bpmn:incoming>
       <bpmn:incoming>b10</bpmn:incoming>
       <bpmn:outgoing>b11</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:sendTask id="Task_buttons" name="Промпт + 7 кнопок действий">
+    <bpmn:sendTask id="Task_buttons" name="Отправить промпт">
+      <bpmn:documentation>Система (Бот): шлёт готовый промпт и 7 инлайн-кнопок действий (сгенерировать, изменить, с моим фото и т.д.).</bpmn:documentation>
       <bpmn:incoming>b8</bpmn:incoming>
       <bpmn:incoming>b11</bpmn:incoming>
       <bpmn:outgoing>b12</bpmn:outgoing>
     </bpmn:sendTask>
     <bpmn:endEvent id="End_p2" name="Промпт доставлен">
+      <bpmn:documentation>Система (Бот): конец P2: пользователь получил промпт по фото.</bpmn:documentation>
       <bpmn:incoming>b12</bpmn:incoming>
     </bpmn:endEvent>
 
     <!-- P3. Face swap -->
-    <bpmn:startEvent id="Start_fs" name="Callback «С моим фото»">
+    <bpmn:startEvent id="Start_fs" name="Кнопка «С фото»">
+      <bpmn:documentation>Пользователь: нажимает инлайн-кнопку «С моим фото» под картинкой. Запускает P3 (face swap).</bpmn:documentation>
       <bpmn:outgoing>c1</bpmn:outgoing>
       <bpmn:messageEventDefinition id="MED_fs" />
     </bpmn:startEvent>
-    <bpmn:exclusiveGateway id="GW_prompt" name="Промпт найден? (Map / caption)">
+    <bpmn:exclusiveGateway id="GW_prompt" name="Промпт найден?">
+      <bpmn:documentation>Система (Бот): ищет исходный промпт (promptStore Map → fallback caption). Не найден ⇒ сессия истекла; найден ⇒ запрос фото.</bpmn:documentation>
       <bpmn:incoming>c1</bpmn:incoming>
       <bpmn:outgoing>c2</bpmn:outgoing>
       <bpmn:outgoing>c3</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:endEvent id="End_expired" name="Сессия истекла">
+      <bpmn:documentation>Система (Бот): конец ветки: промпт не найден (Map очищена/рестарт), просит начать заново.</bpmn:documentation>
       <bpmn:incoming>c2</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:sendTask id="Task_askphoto" name="Запросить фото пользователя">
+    <bpmn:sendTask id="Task_askphoto" name="Запросить фото">
+      <bpmn:documentation>Система (Бот): просит прислать фото лица пользователя для подстановки в сцену.</bpmn:documentation>
       <bpmn:incoming>c3</bpmn:incoming>
       <bpmn:outgoing>c4</bpmn:outgoing>
     </bpmn:sendTask>
-    <bpmn:intermediateCatchEvent id="Catch_photo" name="Фото пользователя получено">
-      <bpmn:incoming>c4</bpmn:incoming>
+    <bpmn:intermediateCatchEvent id="Catch_photo" name="Фото получено">
+      <bpmn:documentation>Пользователь: присылает своё фото; бот ловит его (сюда же приходит фото из P2 при активном pendingFaceSwap).</bpmn:documentation>
       <bpmn:incoming>b2</bpmn:incoming>
+      <bpmn:incoming>c4</bpmn:incoming>
       <bpmn:outgoing>c5</bpmn:outgoing>
       <bpmn:messageEventDefinition id="MED_userphoto" />
     </bpmn:intermediateCatchEvent>
-    <bpmn:serviceTask id="Task_hair" name="Florence-2: определить цвет волос (ошибки глотаются)">
+    <bpmn:serviceTask id="Task_hair" name="Цвет волос">
+      <bpmn:documentation>Внешний сервис (fal.ai): Florence-2 определяет цвет волос на фото для уточнения промпта. Ошибки молча игнорируются.</bpmn:documentation>
       <bpmn:incoming>c5</bpmn:incoming>
       <bpmn:outgoing>c6</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:sendTask id="Task_params" name="Клавиатура параметров (рост / фигура / причёска)">
+    <bpmn:sendTask id="Task_params" name="Меню параметров">
+      <bpmn:documentation>Система (Бот): показывает клавиатуру параметров: рост / фигура / причёска.</bpmn:documentation>
       <bpmn:incoming>c6</bpmn:incoming>
       <bpmn:incoming>c9</bpmn:incoming>
       <bpmn:outgoing>c7</bpmn:outgoing>
     </bpmn:sendTask>
-    <bpmn:intermediateCatchEvent id="Catch_fs" name="Callback fs_*">
+    <bpmn:intermediateCatchEvent id="Catch_fs" name="Выбор fs_*">
+      <bpmn:documentation>Пользователь: нажимает кнопки параметров (callback fs_*). Бот накапливает выбор.</bpmn:documentation>
       <bpmn:incoming>c7</bpmn:incoming>
       <bpmn:outgoing>c8</bpmn:outgoing>
       <bpmn:messageEventDefinition id="MED_fsparam" />
     </bpmn:intermediateCatchEvent>
-    <bpmn:exclusiveGateway id="GW_chosen" name="Рост и фигура выбраны?">
+    <bpmn:exclusiveGateway id="GW_chosen" name="Рост+фигура?">
+      <bpmn:documentation>Система (Бот): проверяет, выбраны ли рост И фигура. Нет ⇒ обновить клавиатуру и ждать; да ⇒ проверка баланса.</bpmn:documentation>
       <bpmn:incoming>c8</bpmn:incoming>
       <bpmn:outgoing>c9</bpmn:outgoing>
       <bpmn:outgoing>c10</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:exclusiveGateway id="GW_bal3" name="Баланс ≥ $0.08?">
+    <bpmn:exclusiveGateway id="GW_bal3" name="Баланс &lt; $0.08?">
+      <bpmn:documentation>Система (Бот): сравнивает баланс с ценой face swap $0.08 (Seedream v4.5 edit). Недостаточно ⇒ отказ; иначе ⇒ запуск.</bpmn:documentation>
       <bpmn:incoming>c10</bpmn:incoming>
       <bpmn:outgoing>c11</bpmn:outgoing>
       <bpmn:outgoing>c12</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:endEvent id="End_nofunds3" name="Отказ: нет средств">
+      <bpmn:documentation>Система (Бот): конец ветки: баланс ниже $0.08, face swap не выполнялся.</bpmn:documentation>
       <bpmn:incoming>c11</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:serviceTask id="Task_edit" name="fal.subscribe: Seedream v4.5 edit (фото из fal.storage)">
+    <bpmn:serviceTask id="Task_edit" name="Seedream edit">
+      <bpmn:documentation>Внешний сервис (fal.ai): fal.subscribe на fal-ai/bytedance/seedream/v4.5/edit: подставляет лицо (фото из fal.storage) в сцену по промпту.</bpmn:documentation>
       <bpmn:incoming>c12</bpmn:incoming>
       <bpmn:outgoing>c13</bpmn:outgoing>
     </bpmn:serviceTask>
     <bpmn:exclusiveGateway id="GW_ok3" name="Успех?">
+      <bpmn:documentation>Система (Бот): проверяет результат edit. Успех ⇒ списание и выдача; ошибка ⇒ сброс состояния.</bpmn:documentation>
       <bpmn:incoming>c13</bpmn:incoming>
       <bpmn:outgoing>c14</bpmn:outgoing>
       <bpmn:outgoing>c17</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:task id="Task_deduct3" name="deductBalance $0.08">
+    <bpmn:task id="Task_deduct3" name="Списать $0.08">
+      <bpmn:documentation>Система (Бот): deductBalance: списывает $0.08 после успешного face swap.</bpmn:documentation>
       <bpmn:incoming>c14</bpmn:incoming>
       <bpmn:outgoing>c15</bpmn:outgoing>
     </bpmn:task>
-    <bpmn:sendTask id="Task_result3" name="Фото-результат + кнопки">
+    <bpmn:sendTask id="Task_result3" name="Отправить фото">
+      <bpmn:documentation>Система (Бот): отправляет результат face swap и инлайн-кнопки дальнейших действий.</bpmn:documentation>
       <bpmn:incoming>c15</bpmn:incoming>
       <bpmn:outgoing>c16</bpmn:outgoing>
     </bpmn:sendTask>
     <bpmn:endEvent id="End_fs" name="Face swap готов">
+      <bpmn:documentation>Система (Бот): конец основного сценария P3: пользователь получил изображение с подменённым лицом.</bpmn:documentation>
       <bpmn:incoming>c16</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:task id="Task_reset" name="Сброс pendingFaceSwap">
+    <bpmn:task id="Task_reset" name="Сбросить FS">
+      <bpmn:documentation>Система (Бот): сбрасывает pendingFaceSwap и связанное состояние после ошибки.</bpmn:documentation>
       <bpmn:incoming>c17</bpmn:incoming>
       <bpmn:outgoing>c18</bpmn:outgoing>
     </bpmn:task>
     <bpmn:endEvent id="End_fs_err" name="Ошибка показана">
+      <bpmn:documentation>Система (Бот): конец ветки ошибок P3: пользователь уведомлён, списания не было.</bpmn:documentation>
       <bpmn:incoming>c18</bpmn:incoming>
     </bpmn:endEvent>
 
     <!-- P5. 3D модель -->
-    <bpmn:startEvent id="Start_3d" name="Callback «3D модель»">
+    <bpmn:startEvent id="Start_3d" name="Кнопка «3D»">
+      <bpmn:documentation>Пользователь: нажимает инлайн-кнопку «3D модель». Запускает P5 (3D).</bpmn:documentation>
       <bpmn:outgoing>d1</bpmn:outgoing>
       <bpmn:messageEventDefinition id="MED_3d" />
     </bpmn:startEvent>
-    <bpmn:sendTask id="Task_menu3d" name="Меню качества (fast / standard / high)">
+    <bpmn:sendTask id="Task_menu3d" name="Меню качества">
+      <bpmn:documentation>Система (Бот): показывает выбор качества: fast / standard / high (разная модель и цена).</bpmn:documentation>
       <bpmn:incoming>d1</bpmn:incoming>
       <bpmn:outgoing>d2</bpmn:outgoing>
     </bpmn:sendTask>
-    <bpmn:intermediateCatchEvent id="Catch_q" name="Callback threed:качество">
+    <bpmn:intermediateCatchEvent id="Catch_q" name="Выбор качества">
+      <bpmn:documentation>Пользователь: выбирает качество (callback threed:*). Бот фиксирует пресет.</bpmn:documentation>
       <bpmn:incoming>d2</bpmn:incoming>
       <bpmn:outgoing>d3</bpmn:outgoing>
       <bpmn:messageEventDefinition id="MED_q" />
     </bpmn:intermediateCatchEvent>
-    <bpmn:exclusiveGateway id="GW_bal5" name="Баланс ≥ $0.05–0.10?">
+    <bpmn:exclusiveGateway id="GW_bal5" name="Баланс мал?">
+      <bpmn:documentation>Система (Бот): сравнивает баланс с ценой выбранного пресета ($0.05–0.10). Недостаточно ⇒ отказ; иначе ⇒ генерация.</bpmn:documentation>
       <bpmn:incoming>d3</bpmn:incoming>
       <bpmn:outgoing>d4</bpmn:outgoing>
       <bpmn:outgoing>d5</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:endEvent id="End_nofunds5" name="Отказ: нет средств">
+      <bpmn:documentation>Система (Бот): конец ветки: баланс ниже цены 3D-пресета, генерация не выполнялась.</bpmn:documentation>
       <bpmn:incoming>d4</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:serviceTask id="Task_rembg" name="birefnet: удалить фон">
+    <bpmn:serviceTask id="Task_rembg" name="Удалить фон">
+      <bpmn:documentation>Внешний сервис (fal.ai): birefnet удаляет фон с исходного изображения перед 3D-реконструкцией.</bpmn:documentation>
       <bpmn:incoming>d5</bpmn:incoming>
       <bpmn:outgoing>d6</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:serviceTask id="Task_gen3d" name="3D: TripoSR / Hunyuan3D / Trellis">
+    <bpmn:serviceTask id="Task_gen3d" name="Сгенерировать 3D">
+      <bpmn:documentation>Внешний сервис (fal.ai): 3D-реконструкция: TripoSR / Hunyuan3D / Trellis в зависимости от выбранного качества.</bpmn:documentation>
       <bpmn:incoming>d6</bpmn:incoming>
       <bpmn:outgoing>d7</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:task id="Task_deduct5" name="deductBalance $0.05–0.10">
+    <bpmn:task id="Task_deduct5" name="Списать $0.05–0.10">
+      <bpmn:documentation>Система (Бот): deductBalance: списывает стоимость выбранного 3D-пресета ($0.05–0.10) после генерации.</bpmn:documentation>
       <bpmn:incoming>d7</bpmn:incoming>
       <bpmn:outgoing>d8</bpmn:outgoing>
     </bpmn:task>
-    <bpmn:sendTask id="Task_glb" name="Отправить GLB-файл">
+    <bpmn:sendTask id="Task_glb" name="Отправить GLB">
+      <bpmn:documentation>Система (Бот): отправляет готовый GLB-файл 3D-модели документом.</bpmn:documentation>
       <bpmn:incoming>d8</bpmn:incoming>
       <bpmn:outgoing>d9</bpmn:outgoing>
     </bpmn:sendTask>
-    <bpmn:endEvent id="End_3d" name="3D модель доставлена">
+    <bpmn:endEvent id="End_3d" name="3D доставлена">
+      <bpmn:documentation>Система (Бот): конец P5: пользователь получил 3D-модель (GLB).</bpmn:documentation>
       <bpmn:incoming>d9</bpmn:incoming>
     </bpmn:endEvent>
 
     <!-- P6. CAD (CadQuery) -->
-    <bpmn:startEvent id="Start_cad" name="/cad или callback «CAD модель»">
+    <bpmn:startEvent id="Start_cad" name="/cad или кнопка">
+      <bpmn:documentation>Пользователь: вызывает /cad с описанием либо нажимает кнопку «CAD модель». Запускает P6 (CAD).</bpmn:documentation>
       <bpmn:outgoing>e1</bpmn:outgoing>
       <bpmn:messageEventDefinition id="MED_cad" />
     </bpmn:startEvent>
-    <bpmn:exclusiveGateway id="GW_bal6" name="Баланс ≥ $0.02?">
+    <bpmn:exclusiveGateway id="GW_bal6" name="Баланс &lt; $0.02?">
+      <bpmn:documentation>Система (Бот): сравнивает баланс с ценой CAD $0.02. Недостаточно ⇒ отказ; иначе ⇒ проверка окружения.</bpmn:documentation>
       <bpmn:incoming>e1</bpmn:incoming>
       <bpmn:outgoing>e2</bpmn:outgoing>
       <bpmn:outgoing>e3</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:endEvent id="End_nofunds6" name="Отказ: нет средств">
+      <bpmn:documentation>Система (Бот): конец ветки: баланс ниже $0.02, CAD не выполнялся.</bpmn:documentation>
       <bpmn:incoming>e2</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:exclusiveGateway id="GW_cq" name="CadQuery установлен? (CADQUERY_PYTHON)">
+    <bpmn:exclusiveGateway id="GW_cq" name="CadQuery есть?">
+      <bpmn:documentation>Система (Бот): проверяет CADQUERY_PYTHON (установлен ли CadQuery). Нет ⇒ подсказка; да ⇒ генерация модели.</bpmn:documentation>
       <bpmn:incoming>e3</bpmn:incoming>
       <bpmn:outgoing>e4</bpmn:outgoing>
       <bpmn:outgoing>e6</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:sendTask id="Task_cq_hint" name="Подсказка «pip install cadquery»">
+    <bpmn:sendTask id="Task_cq_hint" name="Подсказка install">
+      <bpmn:documentation>Система (Бот): подсказывает установить пакет: pip install cadquery.</bpmn:documentation>
       <bpmn:incoming>e4</bpmn:incoming>
       <bpmn:outgoing>e5</bpmn:outgoing>
     </bpmn:sendTask>
     <bpmn:endEvent id="End_cq_hint" name="CAD недоступен">
+      <bpmn:documentation>Система (Бот): конец ветки: окружение CadQuery не настроено.</bpmn:documentation>
       <bpmn:incoming>e5</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:serviceTask id="Task_cad_vision" name="Описание детали (Claude Vision для фото / текст из /cad)">
+    <bpmn:serviceTask id="Task_cad_vision" name="Описать деталь">
+      <bpmn:documentation>Внешний сервис (Anthropic): Claude Vision описывает деталь по фото; для текстового /cad берётся переданное описание.</bpmn:documentation>
       <bpmn:incoming>e6</bpmn:incoming>
       <bpmn:outgoing>e7</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:serviceTask id="Task_cad_code" name="Claude: генерация CadQuery-кода (Python)">
+    <bpmn:serviceTask id="Task_cad_code" name="Сгенерить код">
+      <bpmn:documentation>Внешний сервис (Anthropic): Claude генерирует Python-код CadQuery по описанию детали.</bpmn:documentation>
       <bpmn:incoming>e7</bpmn:incoming>
       <bpmn:outgoing>e8</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:scriptTask id="Task_exec" name="execFile CADQUERY_PYTHON, таймаут 60 c (tmp-каталог)">
+    <bpmn:scriptTask id="Task_exec" name="Выполнить код">
+      <bpmn:documentation>Система (Бот): execFile CADQUERY_PYTHON во временном каталоге, таймаут 60 c. Песочницы нет — управляемое пользователем исполнение кода.</bpmn:documentation>
       <bpmn:incoming>e8</bpmn:incoming>
       <bpmn:outgoing>e9</bpmn:outgoing>
     </bpmn:scriptTask>
-    <bpmn:exclusiveGateway id="GW_files" name="STEP/STL созданы?">
+    <bpmn:exclusiveGateway id="GW_files" name="STEP/STL есть?">
+      <bpmn:documentation>Система (Бот): проверяет, созданы ли файлы STEP и STL. Нет ⇒ ошибка; да ⇒ отправка.</bpmn:documentation>
       <bpmn:incoming>e9</bpmn:incoming>
       <bpmn:outgoing>e10</bpmn:outgoing>
       <bpmn:outgoing>e12</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:sendTask id="Task_cad_err" name="Ответ об ошибке генерации">
+    <bpmn:sendTask id="Task_cad_err" name="Ответ об ошибке">
+      <bpmn:documentation>Система (Бот): сообщает об ошибке генерации/исполнения CadQuery-кода.</bpmn:documentation>
       <bpmn:incoming>e10</bpmn:incoming>
       <bpmn:outgoing>e11</bpmn:outgoing>
     </bpmn:sendTask>
     <bpmn:endEvent id="End_cad_err" name="Ошибка показана">
+      <bpmn:documentation>Система (Бот): конец ветки ошибок P6: файлы не получены, списания не было.</bpmn:documentation>
       <bpmn:incoming>e11</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:sendTask id="Task_send_cad" name="Отправить STEP + STL">
+    <bpmn:sendTask id="Task_send_cad" name="Отправить файлы">
+      <bpmn:documentation>Система (Бот): отправляет результат: файлы STEP + STL документами.</bpmn:documentation>
       <bpmn:incoming>e12</bpmn:incoming>
       <bpmn:outgoing>e13</bpmn:outgoing>
     </bpmn:sendTask>
-    <bpmn:task id="Task_deduct6" name="deductBalance $0.02">
+    <bpmn:task id="Task_deduct6" name="Списать $0.02">
+      <bpmn:documentation>Система (Бот): deductBalance: списывает $0.02 после успешной генерации CAD.</bpmn:documentation>
       <bpmn:incoming>e13</bpmn:incoming>
       <bpmn:outgoing>e14</bpmn:outgoing>
     </bpmn:task>
-    <bpmn:task id="Task_cleanup" name="Очистка tmp (rmSync)">
+    <bpmn:task id="Task_cleanup" name="Очистить tmp">
+      <bpmn:documentation>Система (Бот): rmSync: удаляет временный каталог с артефактами CadQuery.</bpmn:documentation>
       <bpmn:incoming>e14</bpmn:incoming>
       <bpmn:outgoing>e15</bpmn:outgoing>
     </bpmn:task>
-    <bpmn:endEvent id="End_cad" name="CAD модель доставлена">
+    <bpmn:endEvent id="End_cad" name="CAD доставлена">
+      <bpmn:documentation>Система (Бот): конец P6: пользователь получил STEP + STL.</bpmn:documentation>
       <bpmn:incoming>e15</bpmn:incoming>
     </bpmn:endEvent>
 
-    <!-- Потоки P1 -->
+    <!-- Потоки -->
     <bpmn:sequenceFlow id="a1" sourceRef="Start_text" targetRef="GW_empty" />
-    <bpmn:sequenceFlow id="a2" name="да" sourceRef="GW_empty" targetRef="Task_hint" />
+    <bpmn:sequenceFlow id="a2" name="пусто" sourceRef="GW_empty" targetRef="Task_hint" />
     <bpmn:sequenceFlow id="a3" sourceRef="Task_hint" targetRef="End_hint" />
-    <bpmn:sequenceFlow id="a4" name="нет" sourceRef="GW_empty" targetRef="GW_bal1" />
-    <bpmn:sequenceFlow id="a5" name="нет" sourceRef="GW_bal1" targetRef="Task_nofunds1" />
+    <bpmn:sequenceFlow id="a4" name="есть текст" sourceRef="GW_empty" targetRef="GW_bal1" />
+    <bpmn:sequenceFlow id="a5" name="баланс &lt; $0.04" sourceRef="GW_bal1" targetRef="Task_nofunds1" />
     <bpmn:sequenceFlow id="a6" sourceRef="Task_nofunds1" targetRef="End_nofunds1" />
-    <bpmn:sequenceFlow id="a7" name="да" sourceRef="GW_bal1" targetRef="Task_progress" />
+    <bpmn:sequenceFlow id="a7" name="достаточно" sourceRef="GW_bal1" targetRef="Task_progress" />
     <bpmn:sequenceFlow id="a8" sourceRef="Task_progress" targetRef="Task_t2i" />
     <bpmn:sequenceFlow id="a9" sourceRef="Task_t2i" targetRef="GW_ok1" />
     <bpmn:sequenceFlow id="a10" name="успех" sourceRef="GW_ok1" targetRef="Task_deduct1" />
@@ -467,32 +543,28 @@
     <bpmn:sequenceFlow id="a12" sourceRef="Task_store1" targetRef="Task_result1" />
     <bpmn:sequenceFlow id="a13" sourceRef="Task_result1" targetRef="GW_more" />
     <bpmn:sequenceFlow id="a14" name="нет" sourceRef="GW_more" targetRef="End_done1" />
-    <bpmn:sequenceFlow id="a15" name="да — петля «Ещё вариант» (P4)" sourceRef="GW_more" targetRef="GW_bal1" />
+    <bpmn:sequenceFlow id="a15" name="«Ещё вариант» (P4)" sourceRef="GW_more" targetRef="GW_bal1" />
     <bpmn:sequenceFlow id="a16" name="ошибка" sourceRef="GW_ok1" targetRef="GW_errtype" />
     <bpmn:sequenceFlow id="a17" name="timeout" sourceRef="GW_errtype" targetRef="Task_err_timeout" />
-    <bpmn:sequenceFlow id="a18" name="safety | nsfw | content_filter" sourceRef="GW_errtype" targetRef="Task_err_nsfw" />
-    <bpmn:sequenceFlow id="a19" name="rate | 429" sourceRef="GW_errtype" targetRef="Task_err_rate" />
+    <bpmn:sequenceFlow id="a18" name="NSFW" sourceRef="GW_errtype" targetRef="Task_err_nsfw" />
+    <bpmn:sequenceFlow id="a19" name="rate limit" sourceRef="GW_errtype" targetRef="Task_err_rate" />
     <bpmn:sequenceFlow id="a20" name="прочее" sourceRef="GW_errtype" targetRef="Task_err_other" />
     <bpmn:sequenceFlow id="a21" sourceRef="Task_err_timeout" targetRef="End_err1" />
     <bpmn:sequenceFlow id="a22" sourceRef="Task_err_nsfw" targetRef="End_err1" />
     <bpmn:sequenceFlow id="a23" sourceRef="Task_err_rate" targetRef="End_err1" />
     <bpmn:sequenceFlow id="a24" sourceRef="Task_err_other" targetRef="End_err1" />
-
-    <!-- Потоки P2 -->
     <bpmn:sequenceFlow id="b1" sourceRef="Start_photo" targetRef="GW_pending" />
-    <bpmn:sequenceFlow id="b2" name="да — это фото для face swap (P3)" sourceRef="GW_pending" targetRef="Catch_photo" />
+    <bpmn:sequenceFlow id="b2" name="да → face swap (P3)" sourceRef="GW_pending" targetRef="Catch_photo" />
     <bpmn:sequenceFlow id="b3" name="нет" sourceRef="GW_pending" targetRef="Task_getfile" />
     <bpmn:sequenceFlow id="b4" sourceRef="Task_getfile" targetRef="Task_upfal" />
     <bpmn:sequenceFlow id="b5" sourceRef="Task_upfal" targetRef="GW_key" />
-    <bpmn:sequenceFlow id="b6" name="задан" sourceRef="GW_key" targetRef="Task_cv" />
+    <bpmn:sequenceFlow id="b6" name="есть ключ" sourceRef="GW_key" targetRef="Task_cv" />
     <bpmn:sequenceFlow id="b7" sourceRef="Task_cv" targetRef="GW_cv_ok" />
-    <bpmn:sequenceFlow id="b8" name="да" sourceRef="GW_cv_ok" targetRef="Task_buttons" />
-    <bpmn:sequenceFlow id="b9" name="ошибка — fallback" sourceRef="GW_cv_ok" targetRef="Task_florence" />
+    <bpmn:sequenceFlow id="b8" name="успех" sourceRef="GW_cv_ok" targetRef="Task_buttons" />
+    <bpmn:sequenceFlow id="b9" name="ошибка → fallback" sourceRef="GW_cv_ok" targetRef="Task_florence" />
     <bpmn:sequenceFlow id="b10" name="нет ключа" sourceRef="GW_key" targetRef="Task_florence" />
     <bpmn:sequenceFlow id="b11" sourceRef="Task_florence" targetRef="Task_buttons" />
     <bpmn:sequenceFlow id="b12" sourceRef="Task_buttons" targetRef="End_p2" />
-
-    <!-- Потоки P3 -->
     <bpmn:sequenceFlow id="c1" sourceRef="Start_fs" targetRef="GW_prompt" />
     <bpmn:sequenceFlow id="c2" name="нет — истёк" sourceRef="GW_prompt" targetRef="End_expired" />
     <bpmn:sequenceFlow id="c3" name="да" sourceRef="GW_prompt" targetRef="Task_askphoto" />
@@ -501,32 +573,28 @@
     <bpmn:sequenceFlow id="c6" sourceRef="Task_hair" targetRef="Task_params" />
     <bpmn:sequenceFlow id="c7" sourceRef="Task_params" targetRef="Catch_fs" />
     <bpmn:sequenceFlow id="c8" sourceRef="Catch_fs" targetRef="GW_chosen" />
-    <bpmn:sequenceFlow id="c9" name="нет — обновить клавиатуру" sourceRef="GW_chosen" targetRef="Task_params" />
+    <bpmn:sequenceFlow id="c9" name="нет — ждать" sourceRef="GW_chosen" targetRef="Task_params" />
     <bpmn:sequenceFlow id="c10" name="да" sourceRef="GW_chosen" targetRef="GW_bal3" />
-    <bpmn:sequenceFlow id="c11" name="нет" sourceRef="GW_bal3" targetRef="End_nofunds3" />
-    <bpmn:sequenceFlow id="c12" name="да" sourceRef="GW_bal3" targetRef="Task_edit" />
+    <bpmn:sequenceFlow id="c11" name="баланс &lt; $0.08" sourceRef="GW_bal3" targetRef="End_nofunds3" />
+    <bpmn:sequenceFlow id="c12" name="достаточно" sourceRef="GW_bal3" targetRef="Task_edit" />
     <bpmn:sequenceFlow id="c13" sourceRef="Task_edit" targetRef="GW_ok3" />
     <bpmn:sequenceFlow id="c14" name="успех" sourceRef="GW_ok3" targetRef="Task_deduct3" />
     <bpmn:sequenceFlow id="c15" sourceRef="Task_deduct3" targetRef="Task_result3" />
     <bpmn:sequenceFlow id="c16" sourceRef="Task_result3" targetRef="End_fs" />
     <bpmn:sequenceFlow id="c17" name="ошибка" sourceRef="GW_ok3" targetRef="Task_reset" />
     <bpmn:sequenceFlow id="c18" sourceRef="Task_reset" targetRef="End_fs_err" />
-
-    <!-- Потоки P5 -->
     <bpmn:sequenceFlow id="d1" sourceRef="Start_3d" targetRef="Task_menu3d" />
     <bpmn:sequenceFlow id="d2" sourceRef="Task_menu3d" targetRef="Catch_q" />
     <bpmn:sequenceFlow id="d3" sourceRef="Catch_q" targetRef="GW_bal5" />
-    <bpmn:sequenceFlow id="d4" name="нет" sourceRef="GW_bal5" targetRef="End_nofunds5" />
-    <bpmn:sequenceFlow id="d5" name="да" sourceRef="GW_bal5" targetRef="Task_rembg" />
+    <bpmn:sequenceFlow id="d4" name="недостаточно" sourceRef="GW_bal5" targetRef="End_nofunds5" />
+    <bpmn:sequenceFlow id="d5" name="достаточно" sourceRef="GW_bal5" targetRef="Task_rembg" />
     <bpmn:sequenceFlow id="d6" sourceRef="Task_rembg" targetRef="Task_gen3d" />
     <bpmn:sequenceFlow id="d7" sourceRef="Task_gen3d" targetRef="Task_deduct5" />
     <bpmn:sequenceFlow id="d8" sourceRef="Task_deduct5" targetRef="Task_glb" />
     <bpmn:sequenceFlow id="d9" sourceRef="Task_glb" targetRef="End_3d" />
-
-    <!-- Потоки P6 -->
     <bpmn:sequenceFlow id="e1" sourceRef="Start_cad" targetRef="GW_bal6" />
-    <bpmn:sequenceFlow id="e2" name="нет" sourceRef="GW_bal6" targetRef="End_nofunds6" />
-    <bpmn:sequenceFlow id="e3" name="да" sourceRef="GW_bal6" targetRef="GW_cq" />
+    <bpmn:sequenceFlow id="e2" name="баланс &lt; $0.02" sourceRef="GW_bal6" targetRef="End_nofunds6" />
+    <bpmn:sequenceFlow id="e3" name="достаточно" sourceRef="GW_bal6" targetRef="GW_cq" />
     <bpmn:sequenceFlow id="e4" name="нет" sourceRef="GW_cq" targetRef="Task_cq_hint" />
     <bpmn:sequenceFlow id="e5" sourceRef="Task_cq_hint" targetRef="End_cq_hint" />
     <bpmn:sequenceFlow id="e6" name="да" sourceRef="GW_cq" targetRef="Task_cad_vision" />
@@ -535,7 +603,7 @@
     <bpmn:sequenceFlow id="e9" sourceRef="Task_exec" targetRef="GW_files" />
     <bpmn:sequenceFlow id="e10" name="нет" sourceRef="GW_files" targetRef="Task_cad_err" />
     <bpmn:sequenceFlow id="e11" sourceRef="Task_cad_err" targetRef="End_cad_err" />
-    <bpmn:sequenceFlow id="e12" name="да" sourceRef="GW_files" targetRef="Task_send_cad" />
+    <bpmn:sequenceFlow id="e12" name="успех" sourceRef="GW_files" targetRef="Task_send_cad" />
     <bpmn:sequenceFlow id="e13" sourceRef="Task_send_cad" targetRef="Task_deduct6" />
     <bpmn:sequenceFlow id="e14" sourceRef="Task_deduct6" targetRef="Task_cleanup" />
     <bpmn:sequenceFlow id="e15" sourceRef="Task_cleanup" targetRef="End_cad" />
@@ -546,707 +614,924 @@
 
       <!-- Пулы и дорожки -->
       <bpmndi:BPMNShape id="Shape_P_user" bpmnElement="P_user" isHorizontal="true">
-        <dc:Bounds x="160" y="40" width="1980" height="60" />
+        <dc:Bounds x="190" y="40" width="2608" height="70" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_P_bot" bpmnElement="P_bot" isHorizontal="true">
-        <dc:Bounds x="160" y="160" width="1980" height="1740" />
+        <dc:Bounds x="160" y="150" width="2638" height="2590" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Lane_p1" bpmnElement="Lane_p1" isHorizontal="true">
-        <dc:Bounds x="190" y="160" width="1950" height="700" />
+        <dc:Bounds x="190" y="150" width="2608" height="802" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Lane_p2" bpmnElement="Lane_p2" isHorizontal="true">
-        <dc:Bounds x="190" y="860" width="1950" height="240" />
+        <dc:Bounds x="190" y="952" width="2608" height="472" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Lane_p3" bpmnElement="Lane_p3" isHorizontal="true">
-        <dc:Bounds x="190" y="1100" width="1950" height="320" />
+        <dc:Bounds x="190" y="1424" width="2608" height="480" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Lane_p5" bpmnElement="Lane_p5" isHorizontal="true">
-        <dc:Bounds x="190" y="1420" width="1950" height="200" />
+        <dc:Bounds x="190" y="1904" width="2608" height="455" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Lane_p6" bpmnElement="Lane_p6" isHorizontal="true">
-        <dc:Bounds x="190" y="1620" width="1950" height="280" />
+        <dc:Bounds x="190" y="2359" width="2608" height="381" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_P_tg" bpmnElement="P_tg" isHorizontal="true">
-        <dc:Bounds x="160" y="1960" width="440" height="60" />
+        <dc:Bounds x="190" y="2780" width="360" height="70" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_P_fal" bpmnElement="P_fal" isHorizontal="true">
-        <dc:Bounds x="640" y="1960" width="820" height="60" />
+        <dc:Bounds x="590" y="2780" width="760" height="70" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_P_anthropic" bpmnElement="P_anthropic" isHorizontal="true">
-        <dc:Bounds x="1500" y="1960" width="640" height="60" />
+        <dc:Bounds x="1390" y="2780" width="560" height="70" />
       </bpmndi:BPMNShape>
 
-      <!-- P1 -->
+      <!-- p1 -->
       <bpmndi:BPMNShape id="Shape_Start_text" bpmnElement="Start_text">
-        <dc:Bounds x="250" y="342" width="36" height="36" />
+        <dc:Bounds x="306" y="342" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="285" y="382" width="78" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_empty" bpmnElement="GW_empty" isMarkerVisible="true">
-        <dc:Bounds x="350" y="335" width="50" height="50" />
+        <dc:Bounds x="385" y="335" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="376" y="389" width="67" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_hint" bpmnElement="Task_hint">
-        <dc:Bounds x="460" y="190" width="100" height="80" />
+        <dc:Bounds x="520" y="184" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_hint" bpmnElement="End_hint">
-        <dc:Bounds x="620" y="212" width="36" height="36" />
+        <dc:Bounds x="772" y="206" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="740" y="246" width="101" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_bal1" bpmnElement="GW_bal1" isMarkerVisible="true">
-        <dc:Bounds x="500" y="335" width="50" height="50" />
+        <dc:Bounds x="575" y="335" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="558" y="389" width="84" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_nofunds1" bpmnElement="Task_nofunds1">
-        <dc:Bounds x="560" y="440" width="100" height="80" />
+        <dc:Bounds x="710" y="448" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_nofunds1" bpmnElement="End_nofunds1">
-        <dc:Bounds x="720" y="462" width="36" height="36" />
+        <dc:Bounds x="962" y="470" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="930" y="510" width="101" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_progress" bpmnElement="Task_progress">
-        <dc:Bounds x="620" y="320" width="100" height="80" />
+        <dc:Bounds x="710" y="320" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_t2i" bpmnElement="Task_t2i">
-        <dc:Bounds x="780" y="320" width="100" height="80" />
+        <dc:Bounds x="900" y="320" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_ok1" bpmnElement="GW_ok1" isMarkerVisible="true">
-        <dc:Bounds x="940" y="335" width="50" height="50" />
+        <dc:Bounds x="1145" y="335" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1134" y="389" width="73" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_deduct1" bpmnElement="Task_deduct1">
-        <dc:Bounds x="1060" y="320" width="100" height="80" />
+        <dc:Bounds x="1280" y="320" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_store1" bpmnElement="Task_store1">
-        <dc:Bounds x="1220" y="320" width="100" height="80" />
+        <dc:Bounds x="1470" y="320" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_result1" bpmnElement="Task_result1">
-        <dc:Bounds x="1380" y="320" width="100" height="80" />
+        <dc:Bounds x="1660" y="320" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_more" bpmnElement="GW_more" isMarkerVisible="true">
-        <dc:Bounds x="1540" y="335" width="50" height="50" />
+        <dc:Bounds x="1905" y="335" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1894" y="389" width="73" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_done1" bpmnElement="End_done1">
-        <dc:Bounds x="1660" y="342" width="36" height="36" />
+        <dc:Bounds x="2102" y="342" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2067" y="382" width="106" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_errtype" bpmnElement="GW_errtype" isMarkerVisible="true">
-        <dc:Bounds x="940" y="450" width="50" height="50" />
+        <dc:Bounds x="1145" y="543" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1139" y="597" width="62" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_err_timeout" bpmnElement="Task_err_timeout">
-        <dc:Bounds x="1080" y="440" width="100" height="80" />
+        <dc:Bounds x="1280" y="432" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_err_nsfw" bpmnElement="Task_err_nsfw">
-        <dc:Bounds x="1080" y="540" width="100" height="80" />
+        <dc:Bounds x="1280" y="536" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_err_rate" bpmnElement="Task_err_rate">
-        <dc:Bounds x="1080" y="640" width="100" height="80" />
+        <dc:Bounds x="1280" y="640" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_err_other" bpmnElement="Task_err_other">
-        <dc:Bounds x="1080" y="740" width="100" height="80" />
+        <dc:Bounds x="1280" y="744" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_err1" bpmnElement="End_err1">
-        <dc:Bounds x="1240" y="622" width="36" height="36" />
+        <dc:Bounds x="1532" y="610" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1508" y="650" width="84" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-
-      <!-- P2 -->
+      <!-- p2 -->
       <bpmndi:BPMNShape id="Shape_Start_photo" bpmnElement="Start_photo">
-        <dc:Bounds x="250" y="942" width="36" height="36" />
+        <dc:Bounds x="306" y="1102" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="288" y="1142" width="73" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_pending" bpmnElement="GW_pending" isMarkerVisible="true">
-        <dc:Bounds x="350" y="935" width="50" height="50" />
+        <dc:Bounds x="385" y="1095" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="374" y="1149" width="73" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_getfile" bpmnElement="Task_getfile">
-        <dc:Bounds x="460" y="920" width="100" height="80" />
+        <dc:Bounds x="520" y="1080" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_upfal" bpmnElement="Task_upfal">
-        <dc:Bounds x="620" y="920" width="100" height="80" />
+        <dc:Bounds x="710" y="1080" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_key" bpmnElement="GW_key" isMarkerVisible="true">
-        <dc:Bounds x="780" y="935" width="50" height="50" />
+        <dc:Bounds x="955" y="1095" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="941" y="1149" width="78" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_cv" bpmnElement="Task_cv">
-        <dc:Bounds x="890" y="920" width="100" height="80" />
+        <dc:Bounds x="1090" y="1080" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_cv_ok" bpmnElement="GW_cv_ok" isMarkerVisible="true">
-        <dc:Bounds x="1050" y="935" width="50" height="50" />
+        <dc:Bounds x="1335" y="1095" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1332" y="1149" width="56" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_florence" bpmnElement="Task_florence">
-        <dc:Bounds x="890" y="1010" width="100" height="80" />
+        <dc:Bounds x="1090" y="1208" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_buttons" bpmnElement="Task_buttons">
-        <dc:Bounds x="1170" y="920" width="100" height="80" />
+        <dc:Bounds x="1470" y="1080" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_p2" bpmnElement="End_p2">
-        <dc:Bounds x="1330" y="942" width="36" height="36" />
+        <dc:Bounds x="1722" y="1102" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1695" y="1142" width="90" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-
-      <!-- P3 -->
+      <!-- p3 -->
       <bpmndi:BPMNShape id="Shape_Start_fs" bpmnElement="Start_fs">
-        <dc:Bounds x="250" y="1172" width="36" height="36" />
+        <dc:Bounds x="306" y="1582" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="282" y="1622" width="84" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_prompt" bpmnElement="GW_prompt" isMarkerVisible="true">
-        <dc:Bounds x="350" y="1165" width="50" height="50" />
+        <dc:Bounds x="385" y="1575" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="371" y="1629" width="78" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_expired" bpmnElement="End_expired">
-        <dc:Bounds x="357" y="1302" width="36" height="36" />
+        <dc:Bounds x="582" y="1710" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="561" y="1750" width="78" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_askphoto" bpmnElement="Task_askphoto">
-        <dc:Bounds x="460" y="1150" width="100" height="80" />
+        <dc:Bounds x="520" y="1560" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Catch_photo" bpmnElement="Catch_photo">
-        <dc:Bounds x="620" y="1172" width="36" height="36" />
+        <dc:Bounds x="772" y="1582" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="754" y="1622" width="73" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_hair" bpmnElement="Task_hair">
-        <dc:Bounds x="720" y="1150" width="100" height="80" />
+        <dc:Bounds x="900" y="1560" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_params" bpmnElement="Task_params">
-        <dc:Bounds x="880" y="1150" width="100" height="80" />
+        <dc:Bounds x="1090" y="1560" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Catch_fs" bpmnElement="Catch_fs">
-        <dc:Bounds x="1040" y="1172" width="36" height="36" />
+        <dc:Bounds x="1342" y="1582" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1332" y="1622" width="56" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_chosen" bpmnElement="GW_chosen" isMarkerVisible="true">
-        <dc:Bounds x="1140" y="1165" width="50" height="50" />
+        <dc:Bounds x="1525" y="1575" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1516" y="1629" width="67" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_bal3" bpmnElement="GW_bal3" isMarkerVisible="true">
-        <dc:Bounds x="1260" y="1165" width="50" height="50" />
+        <dc:Bounds x="1715" y="1575" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1698" y="1629" width="84" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_nofunds3" bpmnElement="End_nofunds3">
-        <dc:Bounds x="1267" y="1302" width="36" height="36" />
+        <dc:Bounds x="1912" y="1710" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1880" y="1750" width="101" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_edit" bpmnElement="Task_edit">
-        <dc:Bounds x="1380" y="1150" width="100" height="80" />
+        <dc:Bounds x="1850" y="1560" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_ok3" bpmnElement="GW_ok3" isMarkerVisible="true">
-        <dc:Bounds x="1540" y="1165" width="50" height="50" />
+        <dc:Bounds x="2095" y="1575" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2100" y="1629" width="40" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_deduct3" bpmnElement="Task_deduct3">
-        <dc:Bounds x="1660" y="1150" width="100" height="80" />
+        <dc:Bounds x="2230" y="1560" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_result3" bpmnElement="Task_result3">
-        <dc:Bounds x="1820" y="1150" width="100" height="80" />
+        <dc:Bounds x="2420" y="1560" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_fs" bpmnElement="End_fs">
-        <dc:Bounds x="1980" y="1172" width="36" height="36" />
+        <dc:Bounds x="2672" y="1582" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2648" y="1622" width="84" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_reset" bpmnElement="Task_reset">
-        <dc:Bounds x="1540" y="1280" width="100" height="80" />
+        <dc:Bounds x="2230" y="1688" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_fs_err" bpmnElement="End_fs_err">
-        <dc:Bounds x="1700" y="1302" width="36" height="36" />
+        <dc:Bounds x="2482" y="1710" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2458" y="1750" width="84" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-
-      <!-- P5 -->
+      <!-- p5 -->
       <bpmndi:BPMNShape id="Shape_Start_3d" bpmnElement="Start_3d">
-        <dc:Bounds x="250" y="1492" width="36" height="36" />
+        <dc:Bounds x="306" y="2062" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="294" y="2102" width="62" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_menu3d" bpmnElement="Task_menu3d">
-        <dc:Bounds x="360" y="1470" width="100" height="80" />
+        <dc:Bounds x="406" y="2040" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Catch_q" bpmnElement="Catch_q">
-        <dc:Bounds x="520" y="1492" width="36" height="36" />
+        <dc:Bounds x="658" y="2062" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="637" y="2102" width="78" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_bal5" bpmnElement="GW_bal5" isMarkerVisible="true">
-        <dc:Bounds x="620" y="1485" width="50" height="50" />
+        <dc:Bounds x="803" y="2055" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="797" y="2109" width="62" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_nofunds5" bpmnElement="End_nofunds5">
-        <dc:Bounds x="627" y="1560" width="36" height="36" />
+        <dc:Bounds x="962" y="2182" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="930" y="2222" width="101" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_rembg" bpmnElement="Task_rembg">
-        <dc:Bounds x="740" y="1470" width="100" height="80" />
+        <dc:Bounds x="900" y="2040" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_gen3d" bpmnElement="Task_gen3d">
-        <dc:Bounds x="900" y="1470" width="100" height="80" />
+        <dc:Bounds x="1090" y="2040" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_deduct5" bpmnElement="Task_deduct5">
-        <dc:Bounds x="1060" y="1470" width="100" height="80" />
+        <dc:Bounds x="1280" y="2040" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_glb" bpmnElement="Task_glb">
-        <dc:Bounds x="1220" y="1470" width="100" height="80" />
+        <dc:Bounds x="1470" y="2040" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_3d" bpmnElement="End_3d">
-        <dc:Bounds x="1380" y="1492" width="36" height="36" />
+        <dc:Bounds x="1722" y="2062" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1704" y="2102" width="73" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-
-      <!-- P6 -->
+      <!-- p6 -->
       <bpmndi:BPMNShape id="Shape_Start_cad" bpmnElement="Start_cad">
-        <dc:Bounds x="250" y="1702" width="36" height="36" />
+        <dc:Bounds x="306" y="2522" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="282" y="2562" width="84" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_bal6" bpmnElement="GW_bal6" isMarkerVisible="true">
-        <dc:Bounds x="350" y="1695" width="50" height="50" />
+        <dc:Bounds x="385" y="2515" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="368" y="2569" width="84" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_nofunds6" bpmnElement="End_nofunds6">
-        <dc:Bounds x="357" y="1812" width="36" height="36" />
+        <dc:Bounds x="582" y="2642" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="550" y="2682" width="101" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_cq" bpmnElement="GW_cq" isMarkerVisible="true">
-        <dc:Bounds x="460" y="1695" width="50" height="50" />
+        <dc:Bounds x="575" y="2515" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="561" y="2569" width="78" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_cq_hint" bpmnElement="Task_cq_hint">
-        <dc:Bounds x="460" y="1790" width="100" height="80" />
+        <dc:Bounds x="710" y="2620" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_cq_hint" bpmnElement="End_cq_hint">
-        <dc:Bounds x="610" y="1812" width="36" height="36" />
+        <dc:Bounds x="962" y="2642" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="941" y="2682" width="78" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_cad_vision" bpmnElement="Task_cad_vision">
-        <dc:Bounds x="570" y="1680" width="100" height="80" />
+        <dc:Bounds x="710" y="2500" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_cad_code" bpmnElement="Task_cad_code">
-        <dc:Bounds x="730" y="1680" width="100" height="80" />
+        <dc:Bounds x="900" y="2500" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_exec" bpmnElement="Task_exec">
-        <dc:Bounds x="890" y="1680" width="100" height="80" />
+        <dc:Bounds x="1090" y="2500" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_files" bpmnElement="GW_files" isMarkerVisible="true">
-        <dc:Bounds x="1050" y="1695" width="50" height="50" />
+        <dc:Bounds x="1335" y="2515" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1321" y="2569" width="78" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_cad_err" bpmnElement="Task_cad_err">
-        <dc:Bounds x="1110" y="1790" width="100" height="80" />
+        <dc:Bounds x="1470" y="2620" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_cad_err" bpmnElement="End_cad_err">
-        <dc:Bounds x="1270" y="1812" width="36" height="36" />
+        <dc:Bounds x="1722" y="2642" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1698" y="2682" width="84" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_send_cad" bpmnElement="Task_send_cad">
-        <dc:Bounds x="1170" y="1680" width="100" height="80" />
+        <dc:Bounds x="1470" y="2500" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_deduct6" bpmnElement="Task_deduct6">
-        <dc:Bounds x="1330" y="1680" width="100" height="80" />
+        <dc:Bounds x="1660" y="2500" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_cleanup" bpmnElement="Task_cleanup">
-        <dc:Bounds x="1490" y="1680" width="100" height="80" />
+        <dc:Bounds x="1850" y="2500" width="160" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_cad" bpmnElement="End_cad">
-        <dc:Bounds x="1650" y="1702" width="36" height="36" />
+        <dc:Bounds x="2102" y="2522" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2081" y="2562" width="78" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
-      <!-- Рёбра P1 -->
+      <!-- Рёбра -->
       <bpmndi:BPMNEdge id="Edge_a1" bpmnElement="a1">
-        <di:waypoint x="286" y="360" />
-        <di:waypoint x="350" y="360" />
+        <di:waypoint x="342" y="360" />
+        <di:waypoint x="385" y="360" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a2" bpmnElement="a2">
-        <di:waypoint x="375" y="335" />
-        <di:waypoint x="375" y="230" />
-        <di:waypoint x="460" y="230" />
+        <di:waypoint x="410" y="335" />
+        <di:waypoint x="410" y="224" />
+        <di:waypoint x="520" y="224" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="416" y="272" width="28" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a3" bpmnElement="a3">
-        <di:waypoint x="560" y="230" />
-        <di:waypoint x="620" y="230" />
+        <di:waypoint x="680" y="224" />
+        <di:waypoint x="772" y="224" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a4" bpmnElement="a4">
-        <di:waypoint x="400" y="360" />
-        <di:waypoint x="500" y="360" />
+        <di:waypoint x="435" y="360" />
+        <di:waypoint x="575" y="360" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="477" y="344" width="56" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a5" bpmnElement="a5">
-        <di:waypoint x="525" y="385" />
-        <di:waypoint x="525" y="480" />
-        <di:waypoint x="560" y="480" />
+        <di:waypoint x="600" y="385" />
+        <di:waypoint x="600" y="488" />
+        <di:waypoint x="710" y="488" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="606" y="430" width="78" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a6" bpmnElement="a6">
-        <di:waypoint x="660" y="480" />
-        <di:waypoint x="720" y="480" />
+        <di:waypoint x="870" y="488" />
+        <di:waypoint x="962" y="488" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a7" bpmnElement="a7">
-        <di:waypoint x="550" y="360" />
-        <di:waypoint x="620" y="360" />
+        <di:waypoint x="625" y="360" />
+        <di:waypoint x="710" y="360" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="640" y="344" width="56" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a8" bpmnElement="a8">
-        <di:waypoint x="720" y="360" />
-        <di:waypoint x="780" y="360" />
+        <di:waypoint x="870" y="360" />
+        <di:waypoint x="900" y="360" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a9" bpmnElement="a9">
-        <di:waypoint x="880" y="360" />
-        <di:waypoint x="940" y="360" />
+        <di:waypoint x="1060" y="360" />
+        <di:waypoint x="1145" y="360" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a10" bpmnElement="a10">
-        <di:waypoint x="990" y="360" />
-        <di:waypoint x="1060" y="360" />
+        <di:waypoint x="1195" y="360" />
+        <di:waypoint x="1280" y="360" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1224" y="344" width="28" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a11" bpmnElement="a11">
-        <di:waypoint x="1160" y="360" />
-        <di:waypoint x="1220" y="360" />
+        <di:waypoint x="1440" y="360" />
+        <di:waypoint x="1470" y="360" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a12" bpmnElement="a12">
-        <di:waypoint x="1320" y="360" />
-        <di:waypoint x="1380" y="360" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_a13" bpmnElement="a13">
-        <di:waypoint x="1480" y="360" />
-        <di:waypoint x="1540" y="360" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_a14" bpmnElement="a14">
-        <di:waypoint x="1590" y="360" />
+        <di:waypoint x="1630" y="360" />
         <di:waypoint x="1660" y="360" />
       </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_a13" bpmnElement="a13">
+        <di:waypoint x="1820" y="360" />
+        <di:waypoint x="1905" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_a14" bpmnElement="a14">
+        <di:waypoint x="1955" y="360" />
+        <di:waypoint x="2102" y="360" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2016" y="344" width="24" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a15" bpmnElement="a15">
-        <di:waypoint x="1565" y="335" />
-        <di:waypoint x="1565" y="300" />
-        <di:waypoint x="525" y="300" />
-        <di:waypoint x="525" y="335" />
+        <di:waypoint x="1930" y="335" />
+        <di:waypoint x="1930" y="280" />
+        <di:waypoint x="600" y="280" />
+        <di:waypoint x="600" y="335" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1936" y="300" width="101" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a16" bpmnElement="a16">
-        <di:waypoint x="965" y="385" />
-        <di:waypoint x="965" y="450" />
+        <di:waypoint x="1170" y="385" />
+        <di:waypoint x="1170" y="568" />
+        <di:waypoint x="1145" y="568" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1176" y="470" width="34" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a17" bpmnElement="a17">
-        <di:waypoint x="990" y="475" />
-        <di:waypoint x="1080" y="475" />
+        <di:waypoint x="1195" y="568" />
+        <di:waypoint x="1238" y="568" />
+        <di:waypoint x="1238" y="472" />
+        <di:waypoint x="1280" y="472" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1197" y="520" width="39" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a18" bpmnElement="a18">
-        <di:waypoint x="965" y="500" />
-        <di:waypoint x="965" y="580" />
-        <di:waypoint x="1080" y="580" />
+        <di:waypoint x="1195" y="568" />
+        <di:waypoint x="1238" y="568" />
+        <di:waypoint x="1238" y="576" />
+        <di:waypoint x="1280" y="576" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1204" y="552" width="24" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a19" bpmnElement="a19">
-        <di:waypoint x="965" y="500" />
-        <di:waypoint x="965" y="680" />
-        <di:waypoint x="1080" y="680" />
+        <di:waypoint x="1195" y="568" />
+        <di:waypoint x="1238" y="568" />
+        <di:waypoint x="1238" y="680" />
+        <di:waypoint x="1280" y="680" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1188" y="520" width="56" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a20" bpmnElement="a20">
-        <di:waypoint x="965" y="500" />
-        <di:waypoint x="965" y="780" />
-        <di:waypoint x="1080" y="780" />
+        <di:waypoint x="1195" y="568" />
+        <di:waypoint x="1238" y="568" />
+        <di:waypoint x="1238" y="784" />
+        <di:waypoint x="1280" y="784" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1199" y="552" width="34" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a21" bpmnElement="a21">
-        <di:waypoint x="1180" y="480" />
-        <di:waypoint x="1210" y="480" />
-        <di:waypoint x="1210" y="640" />
-        <di:waypoint x="1240" y="640" />
+        <di:waypoint x="1440" y="472" />
+        <di:waypoint x="1490" y="472" />
+        <di:waypoint x="1490" y="628" />
+        <di:waypoint x="1532" y="628" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a22" bpmnElement="a22">
-        <di:waypoint x="1180" y="580" />
-        <di:waypoint x="1210" y="580" />
-        <di:waypoint x="1210" y="640" />
-        <di:waypoint x="1240" y="640" />
+        <di:waypoint x="1440" y="576" />
+        <di:waypoint x="1490" y="576" />
+        <di:waypoint x="1490" y="628" />
+        <di:waypoint x="1532" y="628" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a23" bpmnElement="a23">
-        <di:waypoint x="1180" y="680" />
-        <di:waypoint x="1210" y="680" />
-        <di:waypoint x="1210" y="640" />
-        <di:waypoint x="1240" y="640" />
+        <di:waypoint x="1440" y="680" />
+        <di:waypoint x="1490" y="680" />
+        <di:waypoint x="1490" y="628" />
+        <di:waypoint x="1532" y="628" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a24" bpmnElement="a24">
-        <di:waypoint x="1180" y="780" />
-        <di:waypoint x="1210" y="780" />
-        <di:waypoint x="1210" y="640" />
-        <di:waypoint x="1240" y="640" />
+        <di:waypoint x="1440" y="784" />
+        <di:waypoint x="1490" y="784" />
+        <di:waypoint x="1490" y="628" />
+        <di:waypoint x="1532" y="628" />
       </bpmndi:BPMNEdge>
-
-      <!-- Рёбра P2 -->
       <bpmndi:BPMNEdge id="Edge_b1" bpmnElement="b1">
-        <di:waypoint x="286" y="960" />
-        <di:waypoint x="350" y="960" />
+        <di:waypoint x="342" y="1120" />
+        <di:waypoint x="385" y="1120" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_b2" bpmnElement="b2">
-        <di:waypoint x="375" y="985" />
-        <di:waypoint x="375" y="1080" />
-        <di:waypoint x="638" y="1080" />
-        <di:waypoint x="638" y="1172" />
+        <di:waypoint x="410" y="1145" />
+        <di:waypoint x="410" y="1364" />
+        <di:waypoint x="790" y="1364" />
+        <di:waypoint x="790" y="1582" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="416" y="1247" width="106" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_b3" bpmnElement="b3">
-        <di:waypoint x="400" y="960" />
-        <di:waypoint x="460" y="960" />
+        <di:waypoint x="435" y="1120" />
+        <di:waypoint x="520" y="1120" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="466" y="1104" width="24" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_b4" bpmnElement="b4">
-        <di:waypoint x="560" y="960" />
-        <di:waypoint x="620" y="960" />
+        <di:waypoint x="680" y="1120" />
+        <di:waypoint x="710" y="1120" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_b5" bpmnElement="b5">
-        <di:waypoint x="720" y="960" />
-        <di:waypoint x="780" y="960" />
+        <di:waypoint x="870" y="1120" />
+        <di:waypoint x="955" y="1120" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_b6" bpmnElement="b6">
-        <di:waypoint x="830" y="960" />
-        <di:waypoint x="890" y="960" />
+        <di:waypoint x="1005" y="1120" />
+        <di:waypoint x="1090" y="1120" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1022" y="1104" width="50" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_b7" bpmnElement="b7">
-        <di:waypoint x="990" y="960" />
-        <di:waypoint x="1050" y="960" />
+        <di:waypoint x="1250" y="1120" />
+        <di:waypoint x="1335" y="1120" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_b8" bpmnElement="b8">
-        <di:waypoint x="1100" y="960" />
-        <di:waypoint x="1170" y="960" />
+        <di:waypoint x="1385" y="1120" />
+        <di:waypoint x="1470" y="1120" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1414" y="1104" width="28" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_b9" bpmnElement="b9">
-        <di:waypoint x="1075" y="985" />
-        <di:waypoint x="1075" y="1035" />
-        <di:waypoint x="990" y="1035" />
+        <di:waypoint x="1360" y="1145" />
+        <di:waypoint x="1360" y="1248" />
+        <di:waypoint x="1250" y="1248" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1366" y="1190" width="95" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_b10" bpmnElement="b10">
-        <di:waypoint x="805" y="985" />
-        <di:waypoint x="805" y="1050" />
-        <di:waypoint x="890" y="1050" />
+        <di:waypoint x="980" y="1145" />
+        <di:waypoint x="980" y="1248" />
+        <di:waypoint x="1090" y="1248" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="986" y="1190" width="50" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_b11" bpmnElement="b11">
-        <di:waypoint x="990" y="1065" />
-        <di:waypoint x="1220" y="1065" />
-        <di:waypoint x="1220" y="1000" />
+        <di:waypoint x="1250" y="1248" />
+        <di:waypoint x="1360" y="1248" />
+        <di:waypoint x="1360" y="1120" />
+        <di:waypoint x="1470" y="1120" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_b12" bpmnElement="b12">
-        <di:waypoint x="1270" y="960" />
-        <di:waypoint x="1330" y="960" />
+        <di:waypoint x="1630" y="1120" />
+        <di:waypoint x="1722" y="1120" />
       </bpmndi:BPMNEdge>
-
-      <!-- Рёбра P3 -->
       <bpmndi:BPMNEdge id="Edge_c1" bpmnElement="c1">
-        <di:waypoint x="286" y="1190" />
-        <di:waypoint x="350" y="1190" />
+        <di:waypoint x="342" y="1600" />
+        <di:waypoint x="385" y="1600" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c2" bpmnElement="c2">
-        <di:waypoint x="375" y="1215" />
-        <di:waypoint x="375" y="1302" />
+        <di:waypoint x="410" y="1625" />
+        <di:waypoint x="410" y="1728" />
+        <di:waypoint x="582" y="1728" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="416" y="1670" width="62" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c3" bpmnElement="c3">
-        <di:waypoint x="400" y="1190" />
-        <di:waypoint x="460" y="1190" />
+        <di:waypoint x="435" y="1600" />
+        <di:waypoint x="520" y="1600" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="466" y="1584" width="24" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c4" bpmnElement="c4">
-        <di:waypoint x="560" y="1190" />
-        <di:waypoint x="620" y="1190" />
+        <di:waypoint x="680" y="1600" />
+        <di:waypoint x="772" y="1600" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c5" bpmnElement="c5">
-        <di:waypoint x="656" y="1190" />
-        <di:waypoint x="720" y="1190" />
+        <di:waypoint x="808" y="1600" />
+        <di:waypoint x="900" y="1600" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c6" bpmnElement="c6">
-        <di:waypoint x="820" y="1190" />
-        <di:waypoint x="880" y="1190" />
+        <di:waypoint x="1060" y="1600" />
+        <di:waypoint x="1090" y="1600" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c7" bpmnElement="c7">
-        <di:waypoint x="980" y="1190" />
-        <di:waypoint x="1040" y="1190" />
+        <di:waypoint x="1250" y="1600" />
+        <di:waypoint x="1342" y="1600" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c8" bpmnElement="c8">
-        <di:waypoint x="1076" y="1190" />
-        <di:waypoint x="1140" y="1190" />
+        <di:waypoint x="1378" y="1600" />
+        <di:waypoint x="1525" y="1600" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c9" bpmnElement="c9">
-        <di:waypoint x="1165" y="1165" />
-        <di:waypoint x="1165" y="1120" />
-        <di:waypoint x="930" y="1120" />
-        <di:waypoint x="930" y="1150" />
+        <di:waypoint x="1550" y="1575" />
+        <di:waypoint x="1550" y="1520" />
+        <di:waypoint x="1170" y="1520" />
+        <di:waypoint x="1170" y="1560" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1556" y="1540" width="62" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c10" bpmnElement="c10">
-        <di:waypoint x="1190" y="1190" />
-        <di:waypoint x="1260" y="1190" />
+        <di:waypoint x="1575" y="1600" />
+        <di:waypoint x="1715" y="1600" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1633" y="1584" width="24" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c11" bpmnElement="c11">
-        <di:waypoint x="1285" y="1215" />
-        <di:waypoint x="1285" y="1302" />
+        <di:waypoint x="1740" y="1625" />
+        <di:waypoint x="1740" y="1728" />
+        <di:waypoint x="1912" y="1728" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1746" y="1670" width="78" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c12" bpmnElement="c12">
-        <di:waypoint x="1310" y="1190" />
-        <di:waypoint x="1380" y="1190" />
+        <di:waypoint x="1765" y="1600" />
+        <di:waypoint x="1850" y="1600" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1780" y="1584" width="56" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c13" bpmnElement="c13">
-        <di:waypoint x="1480" y="1190" />
-        <di:waypoint x="1540" y="1190" />
+        <di:waypoint x="2010" y="1600" />
+        <di:waypoint x="2095" y="1600" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c14" bpmnElement="c14">
-        <di:waypoint x="1590" y="1190" />
-        <di:waypoint x="1660" y="1190" />
+        <di:waypoint x="2145" y="1600" />
+        <di:waypoint x="2230" y="1600" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2174" y="1584" width="28" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c15" bpmnElement="c15">
-        <di:waypoint x="1760" y="1190" />
-        <di:waypoint x="1820" y="1190" />
+        <di:waypoint x="2390" y="1600" />
+        <di:waypoint x="2420" y="1600" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c16" bpmnElement="c16">
-        <di:waypoint x="1920" y="1190" />
-        <di:waypoint x="1980" y="1190" />
+        <di:waypoint x="2580" y="1600" />
+        <di:waypoint x="2672" y="1600" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c17" bpmnElement="c17">
-        <di:waypoint x="1565" y="1215" />
-        <di:waypoint x="1565" y="1280" />
+        <di:waypoint x="2120" y="1625" />
+        <di:waypoint x="2120" y="1728" />
+        <di:waypoint x="2230" y="1728" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2126" y="1670" width="34" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_c18" bpmnElement="c18">
-        <di:waypoint x="1640" y="1320" />
-        <di:waypoint x="1700" y="1320" />
+        <di:waypoint x="2390" y="1728" />
+        <di:waypoint x="2482" y="1728" />
       </bpmndi:BPMNEdge>
-
-      <!-- Рёбра P5 -->
       <bpmndi:BPMNEdge id="Edge_d1" bpmnElement="d1">
-        <di:waypoint x="286" y="1510" />
-        <di:waypoint x="360" y="1510" />
+        <di:waypoint x="342" y="2080" />
+        <di:waypoint x="406" y="2080" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_d2" bpmnElement="d2">
-        <di:waypoint x="460" y="1510" />
-        <di:waypoint x="520" y="1510" />
+        <di:waypoint x="566" y="2080" />
+        <di:waypoint x="658" y="2080" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_d3" bpmnElement="d3">
-        <di:waypoint x="556" y="1510" />
-        <di:waypoint x="620" y="1510" />
+        <di:waypoint x="694" y="2080" />
+        <di:waypoint x="803" y="2080" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_d4" bpmnElement="d4">
-        <di:waypoint x="645" y="1535" />
-        <di:waypoint x="645" y="1560" />
+        <di:waypoint x="828" y="2105" />
+        <di:waypoint x="828" y="2200" />
+        <di:waypoint x="962" y="2200" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="834" y="2146" width="67" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_d5" bpmnElement="d5">
-        <di:waypoint x="670" y="1510" />
-        <di:waypoint x="740" y="1510" />
+        <di:waypoint x="853" y="2080" />
+        <di:waypoint x="900" y="2080" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="848" y="2016" width="56" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_d6" bpmnElement="d6">
-        <di:waypoint x="840" y="1510" />
-        <di:waypoint x="900" y="1510" />
+        <di:waypoint x="1060" y="2080" />
+        <di:waypoint x="1090" y="2080" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_d7" bpmnElement="d7">
-        <di:waypoint x="1000" y="1510" />
-        <di:waypoint x="1060" y="1510" />
+        <di:waypoint x="1250" y="2080" />
+        <di:waypoint x="1280" y="2080" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_d8" bpmnElement="d8">
-        <di:waypoint x="1160" y="1510" />
-        <di:waypoint x="1220" y="1510" />
+        <di:waypoint x="1440" y="2080" />
+        <di:waypoint x="1470" y="2080" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_d9" bpmnElement="d9">
-        <di:waypoint x="1320" y="1510" />
-        <di:waypoint x="1380" y="1510" />
+        <di:waypoint x="1630" y="2080" />
+        <di:waypoint x="1722" y="2080" />
       </bpmndi:BPMNEdge>
-
-      <!-- Рёбра P6 -->
       <bpmndi:BPMNEdge id="Edge_e1" bpmnElement="e1">
-        <di:waypoint x="286" y="1720" />
-        <di:waypoint x="350" y="1720" />
+        <di:waypoint x="342" y="2540" />
+        <di:waypoint x="385" y="2540" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e2" bpmnElement="e2">
-        <di:waypoint x="375" y="1745" />
-        <di:waypoint x="375" y="1812" />
+        <di:waypoint x="410" y="2565" />
+        <di:waypoint x="410" y="2660" />
+        <di:waypoint x="582" y="2660" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="416" y="2606" width="78" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e3" bpmnElement="e3">
-        <di:waypoint x="400" y="1720" />
-        <di:waypoint x="460" y="1720" />
+        <di:waypoint x="435" y="2540" />
+        <di:waypoint x="575" y="2540" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="477" y="2524" width="56" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e4" bpmnElement="e4">
-        <di:waypoint x="485" y="1745" />
-        <di:waypoint x="485" y="1790" />
+        <di:waypoint x="600" y="2565" />
+        <di:waypoint x="600" y="2660" />
+        <di:waypoint x="710" y="2660" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="606" y="2606" width="24" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e5" bpmnElement="e5">
-        <di:waypoint x="560" y="1830" />
-        <di:waypoint x="610" y="1830" />
+        <di:waypoint x="870" y="2660" />
+        <di:waypoint x="962" y="2660" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e6" bpmnElement="e6">
-        <di:waypoint x="510" y="1720" />
-        <di:waypoint x="570" y="1720" />
+        <di:waypoint x="625" y="2540" />
+        <di:waypoint x="710" y="2540" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="656" y="2524" width="24" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e7" bpmnElement="e7">
-        <di:waypoint x="670" y="1720" />
-        <di:waypoint x="730" y="1720" />
+        <di:waypoint x="870" y="2540" />
+        <di:waypoint x="900" y="2540" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e8" bpmnElement="e8">
-        <di:waypoint x="830" y="1720" />
-        <di:waypoint x="890" y="1720" />
+        <di:waypoint x="1060" y="2540" />
+        <di:waypoint x="1090" y="2540" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e9" bpmnElement="e9">
-        <di:waypoint x="990" y="1720" />
-        <di:waypoint x="1050" y="1720" />
+        <di:waypoint x="1250" y="2540" />
+        <di:waypoint x="1335" y="2540" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e10" bpmnElement="e10">
-        <di:waypoint x="1075" y="1745" />
-        <di:waypoint x="1075" y="1830" />
-        <di:waypoint x="1110" y="1830" />
+        <di:waypoint x="1360" y="2565" />
+        <di:waypoint x="1360" y="2660" />
+        <di:waypoint x="1470" y="2660" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1366" y="2606" width="24" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e11" bpmnElement="e11">
-        <di:waypoint x="1210" y="1830" />
-        <di:waypoint x="1270" y="1830" />
+        <di:waypoint x="1630" y="2660" />
+        <di:waypoint x="1722" y="2660" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e12" bpmnElement="e12">
-        <di:waypoint x="1100" y="1720" />
-        <di:waypoint x="1170" y="1720" />
+        <di:waypoint x="1385" y="2540" />
+        <di:waypoint x="1470" y="2540" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1414" y="2524" width="28" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e13" bpmnElement="e13">
-        <di:waypoint x="1270" y="1720" />
-        <di:waypoint x="1330" y="1720" />
+        <di:waypoint x="1630" y="2540" />
+        <di:waypoint x="1660" y="2540" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e14" bpmnElement="e14">
-        <di:waypoint x="1430" y="1720" />
-        <di:waypoint x="1490" y="1720" />
+        <di:waypoint x="1820" y="2540" />
+        <di:waypoint x="1850" y="2540" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_e15" bpmnElement="e15">
-        <di:waypoint x="1590" y="1720" />
-        <di:waypoint x="1650" y="1720" />
+        <di:waypoint x="2010" y="2540" />
+        <di:waypoint x="2102" y="2540" />
       </bpmndi:BPMNEdge>
 
       <!-- Message flows -->
       <bpmndi:BPMNEdge id="Edge_MF_text" bpmnElement="MF_text">
-        <di:waypoint x="268" y="100" />
-        <di:waypoint x="268" y="342" />
+        <di:waypoint x="324" y="110" />
+        <di:waypoint x="324" y="342" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_photo" bpmnElement="MF_photo">
-        <di:waypoint x="310" y="100" />
-        <di:waypoint x="310" y="960" />
-        <di:waypoint x="286" y="960" />
+        <di:waypoint x="324" y="110" />
+        <di:waypoint x="324" y="1102" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_fs" bpmnElement="MF_fs">
-        <di:waypoint x="330" y="100" />
-        <di:waypoint x="330" y="1190" />
-        <di:waypoint x="286" y="1190" />
+        <di:waypoint x="324" y="110" />
+        <di:waypoint x="324" y="1582" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_3d" bpmnElement="MF_3d">
-        <di:waypoint x="225" y="100" />
-        <di:waypoint x="225" y="1510" />
-        <di:waypoint x="250" y="1510" />
+        <di:waypoint x="324" y="110" />
+        <di:waypoint x="324" y="2062" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_cad" bpmnElement="MF_cad">
-        <di:waypoint x="205" y="100" />
-        <di:waypoint x="205" y="1720" />
-        <di:waypoint x="250" y="1720" />
+        <di:waypoint x="324" y="110" />
+        <di:waypoint x="324" y="2522" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_res1" bpmnElement="MF_res1">
-        <di:waypoint x="1430" y="320" />
-        <di:waypoint x="1430" y="100" />
+        <di:waypoint x="1740" y="320" />
+        <di:waypoint x="1740" y="110" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_res2" bpmnElement="MF_res2">
-        <di:waypoint x="1190" y="920" />
-        <di:waypoint x="1190" y="100" />
+        <di:waypoint x="1550" y="1080" />
+        <di:waypoint x="1550" y="110" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_res3" bpmnElement="MF_res3">
-        <di:waypoint x="1870" y="1150" />
-        <di:waypoint x="1870" y="100" />
+        <di:waypoint x="2500" y="1560" />
+        <di:waypoint x="2500" y="110" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_glb" bpmnElement="MF_glb">
-        <di:waypoint x="1270" y="1550" />
-        <di:waypoint x="1270" y="1565" />
-        <di:waypoint x="1780" y="1565" />
-        <di:waypoint x="1780" y="100" />
+        <di:waypoint x="1550" y="2040" />
+        <di:waypoint x="1550" y="110" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_cad_files" bpmnElement="MF_cad_files">
-        <di:waypoint x="1245" y="1680" />
-        <di:waypoint x="1245" y="1655" />
-        <di:waypoint x="1370" y="1655" />
-        <di:waypoint x="1370" y="100" />
+        <di:waypoint x="1550" y="2500" />
+        <di:waypoint x="1550" y="110" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_t2i" bpmnElement="MF_t2i">
-        <di:waypoint x="845" y="400" />
-        <di:waypoint x="845" y="1960" />
+        <di:waypoint x="980" y="400" />
+        <di:waypoint x="980" y="2760" />
+        <di:waypoint x="980" y="2760" />
+        <di:waypoint x="980" y="2780" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_getfile" bpmnElement="MF_getfile">
-        <di:waypoint x="510" y="1000" />
-        <di:waypoint x="510" y="1070" />
-        <di:waypoint x="300" y="1070" />
-        <di:waypoint x="300" y="1960" />
+        <di:waypoint x="600" y="1160" />
+        <di:waypoint x="600" y="2760" />
+        <di:waypoint x="530" y="2760" />
+        <di:waypoint x="530" y="2780" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_upfal" bpmnElement="MF_upfal">
-        <di:waypoint x="680" y="1000" />
-        <di:waypoint x="680" y="1960" />
+        <di:waypoint x="790" y="1160" />
+        <di:waypoint x="790" y="2760" />
+        <di:waypoint x="790" y="2760" />
+        <di:waypoint x="790" y="2780" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_cv" bpmnElement="MF_cv">
-        <di:waypoint x="990" y="985" />
-        <di:waypoint x="1030" y="985" />
-        <di:waypoint x="1030" y="1095" />
-        <di:waypoint x="1485" y="1095" />
-        <di:waypoint x="1485" y="1875" />
-        <di:waypoint x="1560" y="1875" />
-        <di:waypoint x="1560" y="1960" />
+        <di:waypoint x="1170" y="1160" />
+        <di:waypoint x="1170" y="2760" />
+        <di:waypoint x="1410" y="2760" />
+        <di:waypoint x="1410" y="2780" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_florence" bpmnElement="MF_florence">
-        <di:waypoint x="985" y="1090" />
-        <di:waypoint x="985" y="1105" />
-        <di:waypoint x="1015" y="1105" />
-        <di:waypoint x="1015" y="1960" />
+        <di:waypoint x="1170" y="1288" />
+        <di:waypoint x="1170" y="2760" />
+        <di:waypoint x="1170" y="2760" />
+        <di:waypoint x="1170" y="2780" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_edit" bpmnElement="MF_edit">
-        <di:waypoint x="1440" y="1230" />
-        <di:waypoint x="1440" y="1960" />
+        <di:waypoint x="1930" y="1640" />
+        <di:waypoint x="1930" y="2760" />
+        <di:waypoint x="1330" y="2760" />
+        <di:waypoint x="1330" y="2780" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_gen3d" bpmnElement="MF_gen3d">
-        <di:waypoint x="995" y="1550" />
-        <di:waypoint x="995" y="1960" />
+        <di:waypoint x="1170" y="2120" />
+        <di:waypoint x="1170" y="2760" />
+        <di:waypoint x="1170" y="2760" />
+        <di:waypoint x="1170" y="2780" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_MF_cadgen" bpmnElement="MF_cadgen">
-        <di:waypoint x="780" y="1760" />
-        <di:waypoint x="780" y="1885" />
-        <di:waypoint x="1520" y="1885" />
-        <di:waypoint x="1520" y="1960" />
+        <di:waypoint x="980" y="2580" />
+        <di:waypoint x="980" y="2760" />
+        <di:waypoint x="1410" y="2760" />
+        <di:waypoint x="1410" y="2780" />
       </bpmndi:BPMNEdge>
 
     </bpmndi:BPMNPlane>
