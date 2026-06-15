@@ -922,7 +922,7 @@
       <bpmndi:BPMNShape id="Shape_Start_cad" bpmnElement="Start_cad">
         <dc:Bounds x="306" y="2522" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="282" y="2562" width="84" height="14" />
+          <dc:Bounds x="258" y="2562" width="84" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_bal6" bpmnElement="GW_bal6" isMarkerVisible="true">
@@ -1092,7 +1092,7 @@
         <di:waypoint x="1238" y="472" />
         <di:waypoint x="1280" y="472" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="1197" y="520" width="39" height="14" />
+          <dc:Bounds x="1197" y="510" width="39" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a18" bpmnElement="a18">
@@ -1101,7 +1101,7 @@
         <di:waypoint x="1238" y="576" />
         <di:waypoint x="1280" y="576" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="1204" y="552" width="24" height="14" />
+          <dc:Bounds x="1204" y="530" width="24" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a19" bpmnElement="a19">
@@ -1110,7 +1110,7 @@
         <di:waypoint x="1238" y="680" />
         <di:waypoint x="1280" y="680" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="1188" y="520" width="56" height="14" />
+          <dc:Bounds x="1188" y="490" width="56" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a20" bpmnElement="a20">
@@ -1119,7 +1119,7 @@
         <di:waypoint x="1238" y="784" />
         <di:waypoint x="1280" y="784" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="1199" y="552" width="34" height="14" />
+          <dc:Bounds x="1199" y="550" width="34" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_a21" bpmnElement="a21">
