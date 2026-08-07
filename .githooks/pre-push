@@ -1,0 +1,50 @@
+#!/bin/sh
+# Enforces: PROJECT_STATUS.md must exist and get touched before merging to main/master.
+# Template: docs/PROJECT_STATUS.template.md in this repo (or ask Atlas/Claude Code for one).
+# One-off bypass: git push --no-verify
+STATUS_FILE="PROJECT_STATUS.md"
+STALE_THRESHOLD=5
+ZERO="0000000000000000000000000000000000000000"
+
+while read local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$ZERO" ] && continue
+
+  branch=$(echo "$remote_ref" | sed 's,^refs/heads/,,')
+  case "$branch" in
+    main|master) ;;
+    *) continue ;;
+  esac
+
+  if [ ! -f "$STATUS_FILE" ]; then
+    echo ""
+    echo "pre-push blocked: $STATUS_FILE отсутствует в корне репо."
+    echo "  Создай его перед пушем в $branch."
+    echo "  Разовый обход: git push --no-verify"
+    echo ""
+    exit 1
+  fi
+
+  if [ "$remote_sha" = "$ZERO" ]; then
+    range="$local_sha"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+
+  commit_count=$(git rev-list --count "$range" 2>/dev/null)
+  [ -z "$commit_count" ] && commit_count=0
+  status_touched=$(git diff --name-only "$range" 2>/dev/null | grep -Fxc "$STATUS_FILE")
+
+  if [ "$commit_count" -ge "$STALE_THRESHOLD" ] && [ "$status_touched" -eq 0 ]; then
+    echo ""
+    echo "pre-push blocked: $commit_count коммитов уходит в $branch, но $STATUS_FILE не обновлялся."
+    # Факты (коммиты, файлы) вставляет скрипт, смысловой контекст дописывает человек/агент.
+    if [ -x scripts/project-status-summary.sh ]; then
+      scripts/project-status-summary.sh || true
+    fi
+    echo "  Обнови $STATUS_FILE (итог этапа) или обойди разово: git push --no-verify"
+    echo ""
+    exit 1
+  fi
+done
+
+exit 0
