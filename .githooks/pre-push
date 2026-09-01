@@ -1,10 +1,22 @@
 #!/bin/sh
-# Enforces: PROJECT_STATUS.md must exist and get touched before merging to main/master.
-# Template: docs/PROJECT_STATUS.template.md in this repo (or ask Atlas/Claude Code for one).
-# One-off bypass: git push --no-verify
+# Общий pre-push hook: PROJECT_STATUS.md не должен протухать в main/master.
+#
+# Отличие от прежней версии: хук не просто блокирует, а САМ дописывает секцию
+# «Авто-сводка (git)» через status-updater.sh. Человеку/агенту остаётся дописать
+# смысл и закоммитить — файл уже заполнен фактами.
+#
+# Источник: /opt/shared/hooks/pre-push (ставится через install-hooks.sh).
+# Разовый обход: git push --no-verify
+
 STATUS_FILE="PROJECT_STATUS.md"
-STALE_THRESHOLD=5
+STALE_THRESHOLD="${STATUS_STALE_THRESHOLD:-5}"
 ZERO="0000000000000000000000000000000000000000"
+
+# Ищем status-updater: сначала общий, потом локальный в репо.
+UPDATER=""
+for cand in /opt/shared/hooks/status-updater.sh scripts/project-status-summary.sh; do
+  [ -x "$cand" ] && { UPDATER="$cand"; break; }
+done
 
 while read local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "$ZERO" ] && continue
@@ -18,7 +30,7 @@ while read local_ref local_sha remote_ref remote_sha; do
   if [ ! -f "$STATUS_FILE" ]; then
     echo ""
     echo "pre-push blocked: $STATUS_FILE отсутствует в корне репо."
-    echo "  Создай его перед пушем в $branch."
+    echo "  Шаблон: /root/.openclaw/workspace/scripts/PROJECT_STATUS.template.md"
     echo "  Разовый обход: git push --no-verify"
     echo ""
     exit 1
@@ -32,16 +44,27 @@ while read local_ref local_sha remote_ref remote_sha; do
 
   commit_count=$(git rev-list --count "$range" 2>/dev/null)
   [ -z "$commit_count" ] && commit_count=0
-  status_touched=$(git diff --name-only "$range" 2>/dev/null | grep -Fxc "$STATUS_FILE")
+  status_touched=$(git diff --name-only "$range" 2>/dev/null | grep -Fxc "$STATUS_FILE" || true)
+  [ -z "$status_touched" ] && status_touched=0
 
   if [ "$commit_count" -ge "$STALE_THRESHOLD" ] && [ "$status_touched" -eq 0 ]; then
     echo ""
     echo "pre-push blocked: $commit_count коммитов уходит в $branch, но $STATUS_FILE не обновлялся."
-    # Факты (коммиты, файлы) вставляет скрипт, смысловой контекст дописывает человек/агент.
-    if [ -x scripts/project-status-summary.sh ]; then
-      scripts/project-status-summary.sh || true
+
+    if [ -n "$UPDATER" ]; then
+      echo "  Заполняю факты автоматически ($UPDATER)..."
+      if "$UPDATER" >/dev/null 2>&1; then
+        echo "  ✅ Секция «Авто-сводка (git)» в $STATUS_FILE обновлена."
+        echo "     Допиши смысл (что сделано / что дальше) и закоммить:"
+        echo "       git add $STATUS_FILE && git commit -m 'docs: обновить PROJECT_STATUS' && git push"
+      else
+        echo "  ⚠️  Автогенерация не удалась — обнови $STATUS_FILE вручную."
+      fi
+    else
+      echo "  status-updater не найден — обнови $STATUS_FILE вручную."
     fi
-    echo "  Обнови $STATUS_FILE (итог этапа) или обойди разово: git push --no-verify"
+
+    echo "  Разовый обход: git push --no-verify"
     echo ""
     exit 1
   fi
