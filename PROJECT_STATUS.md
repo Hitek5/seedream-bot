@@ -77,66 +77,31 @@ face swap), затем аудит и фиксы безопасности 13-15.0
 4. Лимиты на бесплатный vision-анализ + админ-команда пополнения баланса
 5. Привести README к реальности и формализовать деплой (systemd/pm2)
 
+<!-- AUTO:BEGIN status-updater -->
 ## Авто-сводка (git)
-_Сгенерировано 2026-08-07 14:53 через `scripts/project-status-summary.sh`._
-_Здесь только факты из git; смысловой контекст дописывается вручную в разделах выше._
+_Автоблок: обновляется `/opt/shared/hooks/status-updater.sh` (pre-push + ежедневный cron)._
+_Правки внутри маркеров будут перезаписаны. Смысловой контекст — в разделах выше._
+_Сгенерировано 2026-09-01 22:33 MST._
 
 - Ветка: `main`
-- База: статус ещё не коммитился, взяты последние коммиты от f5794aa
-- Коммитов с тех пор: 18
-- Файлов затронуто: 21
+- Последний коммит: 2026-09-01 (a77c286) chore(hooks): pre-push сам генерит авто-сводку PROJECT_STATUS
+- База: последнее обновление статуса — 2026-08-07 (bde8a1a)
+- Коммитов с тех пор: 1
+- Файлов затронуто: 2
+- Рабочее дерево: чисто
 
 ### Коммиты
 ```
-ef8be8a Fix overlapping message-flow labels
-757129b docs(bpmn): short node labels + documentation, relayout, fix Task_cv/Task_florence overlap
-479ae95 Merge pull request #1 from Hitek5/fix/audit-2026-06
-5660372 Add GitHub Actions CI for typecheck
-2c1c138 Add 2026-06 audit report and BPMN process map
-22a376e Stop BOT_TOKEN leak, make balance writes atomic, fix CAD runner
-0cacc1d auto-backup 2026-04-06
-8612ef3 auto-backup 2026-04-05
-6b5d79f auto-backup 2026-04-04
-18377dd auto-backup 2026-04-03
-a139b87 feat: add action buttons under result photo, fix null dimensions in caption
-9f8830e fix: use image_urls array + upload to fal.storage for edit endpoint
-3d45863 fix: remove 'generate as is' — only face swap flow
-ace8f9f feat: face swap flow — button + photo upload + Seedream edit
-cfcb487 fix: switch vision to Florence-2 via fal.ai (no extra API keys)
-... и ещё 3
+a77c286 chore(hooks): pre-push сам генерит авто-сводку PROJECT_STATUS
 ```
 
 ### Изменённые файлы
 ```
-M	.env.example
-A	.github/workflows/ci.yml
-M	.gitignore
-M	PLAN.md
-A	docs/AUDIT-2026-06.md
-A	docs/bpmn/seedream-bot-process.bpmn
-A	package-lock.json
-A	package.json
-A	src/bot/handlers/callback.ts
-A	src/bot/handlers/photo.ts
-A	src/bot/index.ts
-A	src/config.ts
-A	src/index.ts
-A	src/services/balance.ts
-A	src/services/cad.ts
-A	src/services/claude.ts
-A	src/services/seedream.ts
-A	src/services/tgfile.ts
-A	src/services/threed.ts
-A	src/services/vision.ts
-A	tsconfig.json
+M	.githooks/pre-push
+M	PROJECT_STATUS.md
 ```
 
-### Незакоммиченное на момент генерации
-```
-?? .githooks/
-?? PROJECT_STATUS.md
-?? scripts/
-```
+<!-- AUTO:END status-updater -->
 
 ---
 Обновлено: 2026-08-07 14:55 агентом claude-code (первичное создание файла, pre-push hook + scripts/project-status-summary.sh)
