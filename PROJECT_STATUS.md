@@ -81,17 +81,18 @@ face swap), затем аудит и фиксы безопасности 13-15.0
 ## Авто-сводка (git)
 _Автоблок: обновляется `/opt/shared/hooks/status-updater.sh` (pre-push + ежедневный cron)._
 _Правки внутри маркеров будут перезаписаны. Смысловой контекст — в разделах выше._
-_Сгенерировано 2026-09-01 22:33 MST._
+_Сгенерировано 2026-09-20 21:40 MST._
 
 - Ветка: `main`
-- Последний коммит: 2026-09-01 (a77c286) chore(hooks): pre-push сам генерит авто-сводку PROJECT_STATUS
+- Последний коммит: 2026-09-19 (4a39126) feat(billing): add HTTP adapter for pybot.billing ledger
 - База: последнее обновление статуса — 2026-08-07 (bde8a1a)
-- Коммитов с тех пор: 1
-- Файлов затронуто: 2
+- Коммитов с тех пор: 2
+- Файлов затронуто: 3
 - Рабочее дерево: чисто
 
 ### Коммиты
 ```
+4a39126 feat(billing): add HTTP adapter for pybot.billing ledger
 a77c286 chore(hooks): pre-push сам генерит авто-сводку PROJECT_STATUS
 ```
 
@@ -99,6 +100,7 @@ a77c286 chore(hooks): pre-push сам генерит авто-сводку PROJE
 ```
 M	.githooks/pre-push
 M	PROJECT_STATUS.md
+A	src/services/billing.ts
 ```
 
 <!-- AUTO:END status-updater -->
