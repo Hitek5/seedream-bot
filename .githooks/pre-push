@@ -44,7 +44,13 @@ while read local_ref local_sha remote_ref remote_sha; do
 
   commit_count=$(git rev-list --count "$range" 2>/dev/null)
   [ -z "$commit_count" ] && commit_count=0
-  status_touched=$(git diff --name-only "$range" 2>/dev/null | grep -Fxc "$STATUS_FILE" || true)
+
+  # Файлы, затронутые КОММИТАМИ из диапазона.
+  # Раньше здесь был `git diff --name-only "$range"`: для первого пуша в новую
+  # ветку range = один sha, и такой diff сравнивает рабочее дерево с коммитом,
+  # т.е. на чистом дереве всегда пусто -> хук блокировал первый пуш навсегда,
+  # даже когда PROJECT_STATUS.md правился в истории. Берём файлы из логов.
+  status_touched=$(git log --format= --name-only "$range" 2>/dev/null | grep -Fxc "$STATUS_FILE" || true)
   [ -z "$status_touched" ] && status_touched=0
 
   if [ "$commit_count" -ge "$STALE_THRESHOLD" ] && [ "$status_touched" -eq 0 ]; then
